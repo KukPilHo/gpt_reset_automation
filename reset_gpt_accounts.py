@@ -13,6 +13,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 
 # .env 파일 로드
 load_dotenv()
@@ -51,11 +52,16 @@ def parse_ranges(range_str):
     # 중복 제거 및 정렬
     return sorted(list(set(numbers)))
 
-def get_openai_code(email_user, email_pass, target_email, max_retries=10, delay=5):
+def get_openai_code(email_user, email_pass, target_email, login_timestamp=None, max_retries=10, delay=5):
     """
     IMAP을 사용하여 이메일함에 접속한 후, OpenAI에서 온 가장 최근의 6자리 인증 코드를 추출합니다.
+    login_timestamp: 로그인 요청 시점의 UTC datetime. 이 시점 이후에 온 메일만 인정합니다.
     """
     print(f"📧 [{target_email}] 이메일 인증 코드 확인 중...")
+    
+    # login_timestamp가 없으면 기본값: 현재 시각 - 2분 (안전 마진)
+    if login_timestamp is None:
+        login_timestamp = datetime.now(timezone.utc) - timedelta(minutes=2)
     
     for attempt in range(max_retries):
         try:
@@ -91,11 +97,11 @@ def get_openai_code(email_user, email_pass, target_email, max_retries=10, delay=
                         if "openai" not in sender and "chatgpt" not in sender and target_email.lower() not in sender:
                             continue
 
-                        # 메일 수신 시간 확인 (오래된 과거 메일 무시)
+                        # 메일 수신 시간 확인 — 로그인 요청 시점 이후의 메일만 인정
                         try:
                             mail_date = email.utils.parsedate_to_datetime(msg.get("Date"))
-                            if datetime.now(timezone.utc) - mail_date > timedelta(minutes=10):
-                                continue # 10분 이상 지난 과거 메일은 무시하고 계속 대기
+                            if mail_date < login_timestamp:
+                                continue  # 로그인 버튼 누르기 전에 온 메일은 무시
                         except Exception as e:
                             print(f"시간 파싱 에러 (무시됨): {e}")
 
@@ -160,6 +166,8 @@ def login_and_reset(driver, target_email):
             input("👉 직접 'Log in' 버튼을 누르시고, 이메일 입력창이 나오면 터미널에서 [Enter]를 누르세요...")
 
         # 2. 이메일 입력
+        # ★ 로그인 요청 시점 기록 (이 시점 이후에 온 인증 코드만 사용)
+        login_request_time = datetime.now(timezone.utc) - timedelta(seconds=5)  # 5초 여유
         try:
             email_input = WebDriverWait(driver, 5).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
@@ -204,7 +212,7 @@ def login_and_reset(driver, target_email):
         
         if found_code:
             print("📩 이메일 인증 코드가 필요합니다.")
-            code = get_openai_code(MASTER_EMAIL, APP_PASSWORD, target_email)
+            code = get_openai_code(MASTER_EMAIL, APP_PASSWORD, target_email, login_timestamp=login_request_time)
             if code:
                 print(f"✅ 인증 코드 추출 완료: {code}")
                 try:
@@ -237,79 +245,239 @@ def login_and_reset(driver, target_email):
         print("⚙️ 초기화(삭제) 작업을 수행합니다...")
         
         try:
-            # 라이브러리 페이지로 이동
+            # ===== (A) 라이브러리 아이템 삭제 =====
             driver.get("https://chatgpt.com/library")
-            time.sleep(5) # 페이지 로딩 대기
-            
-            # (1) '모두 선택' 후 삭제
-            select_all_btns = driver.find_elements(By.CSS_SELECTOR, "[aria-label='모두 선택']")
-            if select_all_btns:
-                print("➡️ '모두 선택' 버튼 클릭")
-                # ElementClickInterceptedException 방지를 위해 JavaScript로 클릭
-                driver.execute_script("arguments[0].click();", select_all_btns[0])
-                time.sleep(1)
-                
-                # 삭제 버튼 클릭 (버튼이 아니라 div 태그로 되어있고 gap-1.5 클래스가 포함됨)
-                delete_btns = driver.find_elements(By.XPATH, "//div[contains(@class, 'gap-1.5') and contains(., '삭제')]")
-                if delete_btns:
-                    print("➡️ '삭제' 버튼 클릭")
-                    # 여러 개가 잡힐 수 있으니 가장 마지막에 렌더링된 요소나 첫 번째 요소를 클릭
-                    # 안전하게 첫 번째 요소를 클릭합니다.
-                    driver.execute_script("arguments[0].click();", delete_btns[0])
-                    time.sleep(3) # 모달이 뜨는 애니메이션 대기 (2~3초)
-                    
-                    # 확인 모달의 삭제 버튼 클릭 (정확히 class="flex items-center justify-center" 이고 텍스트가 "삭제"인 div)
-                    confirm_btns = driver.find_elements(By.XPATH, "//div[@class='flex items-center justify-center' and text()='삭제']")
+            time.sleep(5)  # 페이지 로딩 대기
+
+            # ── (A-1) '모두 선택' 체크박스로 일괄 삭제 시도 ──
+            # 체크박스는 aria-hidden=true, opacity-0 이지만 JS 클릭으로 강제 활성화 가능
+            select_all_cb = driver.find_elements(By.CSS_SELECTOR, "input[aria-label='모두 선택']")
+            if select_all_cb:
+                print("➡️ '모두 선택' 체크박스 클릭 (JS)")
+                driver.execute_script("arguments[0].click();", select_all_cb[0])
+                time.sleep(2)
+
+                # 체크박스 선택 후 나타나는 삭제 버튼 찾기
+                # 보통 상단에 floating action bar로 "삭제" 버튼이 나타남
+                bulk_delete_btn = driver.find_elements(
+                    By.XPATH,
+                    "//button[contains(., '삭제')]"
+                )
+                if bulk_delete_btn:
+                    print("➡️ '삭제' 버튼 클릭 (일괄)")
+                    driver.execute_script("arguments[0].click();", bulk_delete_btn[0])
+                    time.sleep(2)
+
+                    # 확인 모달의 '삭제' 버튼
+                    confirm_btns = driver.find_elements(
+                        By.XPATH,
+                        "//button[contains(@class, 'btn-danger') and contains(., '삭제')]"
+                    )
+                    if not confirm_btns:
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//dialog//button[contains(., '삭제')] | //div[@role='dialog']//button[contains(., '삭제')]"
+                        )
+                    if not confirm_btns:
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//button[.//div[text()='삭제']]"
+                        )
                     if confirm_btns:
-                        print("➡️ '삭제(확인)' 버튼 클릭")
+                        print("➡️ '삭제(확인)' 클릭 (일괄)")
                         driver.execute_script("arguments[0].click();", confirm_btns[-1])
                         time.sleep(3)
-            
-            # (2) 남은 프로젝트 개별 삭제 루프
+                        print("✅ 라이브러리 일괄 삭제 완료")
+                    else:
+                        print("⚠️ 일괄 삭제 확인 버튼을 찾지 못했습니다.")
+                else:
+                    print("⚠️ 일괄 삭제 버튼이 나타나지 않았습니다.")
+            else:
+                print("ℹ️ '모두 선택' 체크박스를 찾지 못했습니다.")
+
+            time.sleep(2)
+
+            # ── (A-2) 남은 아이템 개별 삭제 (일괄 삭제가 안 된 경우 폴백) ──
+            lib_delete_count = 0
+            max_lib_deletes = 100  # 무한루프 방지
+            while lib_delete_count < max_lib_deletes:
+                time.sleep(1)
+                # 라이브러리 행의 ⋯ (작업 메뉴) 버튼 찾기
+                action_btns = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "button[data-page-table-row-actions-focus-target]"
+                )
+                if not action_btns:
+                    print(f"📂 라이브러리 아이템 {lib_delete_count}개 삭제 완료 (더 이상 없음)")
+                    break
+
+                print(f"➡️ 라이브러리 아이템 ⋯ 버튼 클릭 ({lib_delete_count + 1}번째)")
+                driver.execute_script("arguments[0].click();", action_btns[0])
+                time.sleep(1)
+
+                # 드롭다운 메뉴에서 '삭제' 항목 찾기 (menuitem role 사용)
+                delete_menu = driver.find_elements(
+                    By.XPATH,
+                    "//div[@role='menuitem' and contains(., '삭제')]"
+                )
+                if not delete_menu:
+                    # role=menuitem이 아닌 경우 대비
+                    delete_menu = driver.find_elements(
+                        By.XPATH,
+                        "//div[@data-radix-collection-item]//span[contains(text(), '삭제')]/ancestor::div[@data-radix-collection-item]"
+                    )
+                if not delete_menu:
+                    # 마지막 폴백: 텍스트 기반 검색 (팝오버/드롭다운 내에서)
+                    delete_menu = driver.find_elements(
+                        By.XPATH,
+                        "//*[@role='menu']//*[contains(text(), '삭제')]"
+                    )
+
+                if delete_menu:
+                    print("➡️ '삭제' 메뉴 클릭")
+                    driver.execute_script("arguments[0].click();", delete_menu[0])
+                    time.sleep(2)
+
+                    # 확인 모달의 '삭제' 버튼 클릭
+                    # 모달의 빨간 삭제 버튼은 보통 btn-danger 또는 btn-primary 클래스
+                    confirm_btns = driver.find_elements(
+                        By.XPATH,
+                        "//button[contains(@class, 'btn-danger') and contains(., '삭제')]"
+                    )
+                    if not confirm_btns:
+                        # 대안: dialog 내부의 삭제 버튼
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//dialog//button[contains(., '삭제')] | //div[@role='dialog']//button[contains(., '삭제')]"
+                        )
+                    if not confirm_btns:
+                        # 최후 폴백
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//button[.//div[text()='삭제']]"
+                        )
+                    if confirm_btns:
+                        print("➡️ '삭제(확인)' 클릭")
+                        driver.execute_script("arguments[0].click();", confirm_btns[-1])
+                        time.sleep(2)
+                        lib_delete_count += 1
+                    else:
+                        print("⚠️ 확인 모달의 삭제 버튼을 찾지 못했습니다. Esc로 닫기 시도.")
+                        driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                        time.sleep(1)
+                        break
+                else:
+                    print("⚠️ 드롭다운에서 '삭제' 메뉴를 찾지 못했습니다. Esc로 닫기.")
+                    driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                    time.sleep(1)
+                    break
+
+            # ===== (B) 사이드바 프로젝트 개별 삭제 루프 =====
+            # 사이드바의 채팅 기록에서 대화 옵션(⋯) → 삭제
             while True:
-                # 사용자가 제공한 HTML 구조 기반으로 프로젝트 옵션 버튼 찾기
                 option_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-trailing-button]")
                 if not option_btns:
                     print("➡️ 삭제할 프로젝트가 더 이상 없습니다.")
                     break
-                
+
                 print("➡️ '프로젝트 옵션 열기' 클릭")
                 driver.execute_script("arguments[0].click();", option_btns[0])
                 time.sleep(1)
-                
+
                 # '프로젝트 삭제' 텍스트를 가진 메뉴 항목 클릭
-                del_proj_menus = driver.find_elements(By.XPATH, "//*[contains(text(), '프로젝트 삭제')]")
-                if del_proj_menus:
+                del_proj_menus = driver.find_elements(
+                    By.XPATH,
+                    "//*[contains(text(), '프로젝트 삭제') or contains(text(), '삭제')]"
+                )
+                # 드롭다운 메뉴 아이템 중 '삭제' 텍스트가 있는 것 우선
+                del_menu_item = None
+                for item in del_proj_menus:
+                    txt = item.text.strip()
+                    if '삭제' in txt:
+                        del_menu_item = item
+                        break
+
+                if del_menu_item:
                     print("➡️ '프로젝트 삭제' 클릭")
-                    driver.execute_script("arguments[0].click();", del_proj_menus[0])
-                    time.sleep(3) # 모달이 뜨는 애니메이션 대기
-                    
-                    # 확인 창의 '삭제' 클릭 (div나 button 모두 커버)
-                    confirm_btns = driver.find_elements(By.XPATH, "//*[contains(text(), '삭제') or contains(., '삭제')]")
+                    driver.execute_script("arguments[0].click();", del_menu_item)
+                    time.sleep(3)
+
+                    # 확인 창의 '삭제' 클릭 (모달 내 버튼)
+                    confirm_btns = driver.find_elements(
+                        By.XPATH,
+                        "//button[contains(@class, 'btn-danger')] | //dialog//button[contains(., '삭제')] | //div[@role='dialog']//button[contains(., '삭제')]"
+                    )
+                    if not confirm_btns:
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//button[.//div[text()='삭제']]"
+                        )
                     if confirm_btns:
                         print("➡️ '삭제(확인)' 클릭")
                         driver.execute_script("arguments[0].click();", confirm_btns[-1])
                         time.sleep(3)
+                    else:
+                        print("⚠️ 확인 버튼을 못 찾음, Esc로 닫기")
+                        driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                        time.sleep(1)
+                        break
                 else:
-                    # 메뉴가 안 뜨면 무한 루프 방지
+                    # 메뉴가 안 뜨면 Esc 후 무한 루프 방지
+                    driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                    time.sleep(1)
                     break
 
-            # (3) 설정 메뉴 진입
+            # ===== (C) 프로필 → 설정 메뉴 진입 =====
             print("➡️ 프로필 버튼 클릭")
-            profile_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='accounts-profile-button']"))
+            time.sleep(2)
+            # data-testid='accounts-profile-button'이 2개 존재 (tiny-bar는 inert)
+            # 마지막 요소가 실제 활성 버튼
+            profile_btns = driver.find_elements(
+                By.CSS_SELECTOR, "[data-testid='accounts-profile-button']"
             )
-            driver.execute_script("arguments[0].click();", profile_btn)
-            time.sleep(1)
-            
+            if profile_btns:
+                active_btn = profile_btns[-1]
+                # ActionChains로 실제 마우스 이벤트 발생 (div[role=button]에 안정적)
+                try:
+                    ActionChains(driver).move_to_element(active_btn).click().perform()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", active_btn)
+            else:
+                print("⚠️ 프로필 버튼을 찾지 못했습니다.")
+            time.sleep(2)  # 드롭다운 렌더링 대기
+
             print("➡️ '설정' 클릭")
-            # 설정 메뉴는 고유 testid를 사용하여 완벽하게 탐색
-            settings_menus = driver.find_elements(By.CSS_SELECTOR, "[data-testid='settings-menu-item']")
+            # 프로필 드롭다운 메뉴는 Radix portal로 렌더링됨
+            # aria-label 또는 텍스트 기반으로 찾기
+            settings_menus = driver.find_elements(
+                By.XPATH,
+                "//div[@role='menuitem' and contains(., '설정')]"
+            )
+            if not settings_menus:
+                # 대안: menuitem이 아닌 일반 텍스트 링크
+                settings_menus = driver.find_elements(
+                    By.XPATH,
+                    "//*[@role='menu']//*[contains(text(), '설정')]"
+                )
+            if not settings_menus:
+                # data-testid 기반 폴백
+                settings_menus = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "[data-testid='settings-menu-item']"
+                )
             if settings_menus:
                 driver.execute_script("arguments[0].click();", settings_menus[0])
                 time.sleep(2)
             else:
-                print("⚠️ '설정' 버튼을 찾지 못했습니다.")
+                print("⚠️ '설정' 버튼을 찾지 못했습니다. 페이지 디버깅 필요.")
+                # 디버그: 현재 열린 메뉴의 내용 출력
+                menus = driver.find_elements(By.XPATH, "//*[@role='menu']//*")
+                if menus:
+                    print(f"  [디버그] 메뉴 내 요소 {len(menus)}개 발견:")
+                    for m in menus[:10]:
+                        print(f"    - tag={m.tag_name}, text='{m.text[:50] if m.text else ''}', role={m.get_attribute('role')}")
+                else:
+                    print("  [디버그] role='menu' 요소가 없습니다.")
 
         except Exception as e:
             print(f"⚠️ 초기화 단계 자동 클릭 중 오류 발생: {e}")
