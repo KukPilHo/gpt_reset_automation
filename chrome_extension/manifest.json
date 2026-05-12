@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "에이블런 GPT 계정 추가",
+  "version": "1.0",
+  "description": "에이블런 GPT 계정 그룹에 멤버를 자동으로 추가하는 업무 자동화 툴입니다.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "activeTab",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://groups.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
