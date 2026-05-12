@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "에이블런 GPT 계정 추가",
-  "version": "1.0",
-  "description": "에이블런 GPT 계정 그룹에 멤버를 자동으로 추가하는 업무 자동화 툴입니다.",
+  "version": "1.1",
+  "description": "에이블런 Google Groups에 GPT 계정 멤버를 엑셀 복사/붙여넣기로 일괄 자동 등록하는 도구입니다.",
   "permissions": [
     "tabs",
     "scripting",
