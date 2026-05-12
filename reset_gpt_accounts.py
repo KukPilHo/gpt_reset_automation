@@ -168,13 +168,21 @@ def login_and_reset(driver, target_email):
         # 2. 이메일 입력
         # ★ 로그인 요청 시점 기록 (이 시점 이후에 온 인증 코드만 사용)
         login_request_time = datetime.now(timezone.utc) - timedelta(seconds=5)  # 5초 여유
-        try:
-            email_input = WebDriverWait(driver, 5).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
-            )
-            email_input.send_keys(target_email)
-            email_input.send_keys(Keys.RETURN)
-        except:
+        email_entered = False
+        for attempt in range(3):  # 최대 3회 시도
+            try:
+                email_input = WebDriverWait(driver, 5).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
+                )
+                email_input.send_keys(target_email)
+                email_input.send_keys(Keys.RETURN)
+                email_entered = True
+                break
+            except:
+                if attempt < 2:
+                    print(f"⚠️ 이메일 입력창을 찾지 못했습니다. 재시도 중... ({attempt + 1}/2)")
+                    time.sleep(3)
+        if not email_entered:
             print("⚠️ 이메일 입력창을 자동으로 찾지 못했습니다.")
             input("👉 직접 이메일을 입력하시고 다음 단계로 넘어가면 터미널에서 [Enter]를 누르세요...")
 
@@ -228,16 +236,39 @@ def login_and_reset(driver, target_email):
             else:
                 input("👉 인증 코드를 메일함에서 확인하여 직접 입력하신 후 [Enter]를 누르세요...")
 
-        # 4. 로그인 완료 대기
+        # 4. 로그인 완료 대기 (계정 선택 화면 처리 포함)
         print("⏳ 로그인 완료를 기다립니다...")
-        try:
-            WebDriverWait(driver, 15).until(
-                EC.visibility_of_element_located((By.ID, "prompt-textarea"))
-            )
-            print("🟢 로그인 성공!")
-        except:
-            print("⚠️ 로그인 완료를 자동으로 감지하지 못했습니다.")
-            input("👉 로그인이 완료되어 채팅창이 보이면 터미널에서 [Enter]를 누르세요...")
+        login_done = False
+        for _ in range(30):  # 최대 30초 대기
+            try:
+                # 채팅창이 보이면 로그인 완료
+                if driver.find_elements(By.ID, "prompt-textarea"):
+                    print("🟢 로그인 성공!")
+                    login_done = True
+                    break
+
+                # 계정 선택 화면 (에이블런 계정 / gpt 계정) 처리
+                # fieldset 안에 button이 여러 개 있는 구조
+                account_btns = driver.find_elements(By.CSS_SELECTOR, "fieldset > button")
+                if len(account_btns) >= 2:
+                    print("➡️ 계정 선택 화면 감지 — 첫 번째 계정 선택")
+                    driver.execute_script("arguments[0].click();", account_btns[0])
+                    time.sleep(3)
+                    continue
+            except:
+                pass
+            time.sleep(1)
+
+        if not login_done:
+            # 마지막으로 한 번 더 확인
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.ID, "prompt-textarea"))
+                )
+                print("🟢 로그인 성공!")
+            except:
+                print("⚠️ 로그인 완료를 자동으로 감지하지 못했습니다.")
+                input("👉 로그인이 완료되어 채팅창이 보이면 터미널에서 [Enter]를 누르세요...")
 
         # ------------------------------------------------------------------
         # 5. 초기화 작업 (사용자 커스텀 플로우)
@@ -245,20 +276,181 @@ def login_and_reset(driver, target_email):
         print("⚙️ 초기화(삭제) 작업을 수행합니다...")
         
         try:
+            # ===== (C) 설정 → 데이터 제어 → 모두 삭제 (채팅 기록 먼저 삭제) =====
+            # URL 직접 이동으로 프로필/설정/탭 클릭 과정 생략
+            print("➡️ 설정 > 데이터 제어 페이지로 이동")
+            driver.get("https://chatgpt.com/#settings/DataControls")
+            time.sleep(4)  # 설정 모달 로딩 대기
+
+            # '모두 삭제' 버튼 클릭
+            print("➡️ '모두 삭제' 버튼 클릭")
+            delete_all_btn = driver.find_elements(
+                By.XPATH,
+                "//button[.//div[text()='모두 삭제'] or contains(., '모두 삭제')]"
+            )
+            if delete_all_btn:
+                driver.execute_script("arguments[0].click();", delete_all_btn[0])
+                time.sleep(3)  # 확인 팝업 대기
+
+                # 확인 팝업의 '삭제 확인' 클릭
+                print("➡️ '삭제 확인' 클릭")
+                time.sleep(2)  # 팝업 렌더링 대기
+                # 방법1: data-testid (가장 안정적)
+                confirm_delete_all = driver.find_elements(
+                    By.CSS_SELECTOR, "button[data-testid='confirm-delete-all-chats-button']"
+                )
+                if not confirm_delete_all:
+                    # 방법2: btn-danger 클래스
+                    confirm_delete_all = driver.find_elements(
+                        By.CSS_SELECTOR, "button.btn-danger"
+                    )
+                if not confirm_delete_all:
+                    # 방법3: '삭제 확인' 텍스트 기반
+                    confirm_delete_all = driver.find_elements(
+                        By.XPATH,
+                        "//button[contains(., '삭제 확인')]"
+                    )
+                if confirm_delete_all:
+                    target_btn = confirm_delete_all[0]
+                    driver.execute_script("arguments[0].scrollIntoView(true);", target_btn)
+                    time.sleep(0.5)
+                    driver.execute_script("arguments[0].click();", target_btn)
+                    time.sleep(3)
+                    print("✅ 채팅 기록 모두 삭제 완료")
+                else:
+                    print("⚠️ '삭제 확인' 버튼을 찾지 못했습니다.")
+            else:
+                print("⚠️ '모두 삭제' 버튼을 찾지 못했습니다.")
+
             # ===== (A) 라이브러리 아이템 삭제 =====
             driver.get("https://chatgpt.com/library")
             time.sleep(5)  # 페이지 로딩 대기
 
-            # ── (A-1) '모두 선택' 체크박스로 일괄 삭제 시도 ──
-            # 체크박스는 aria-hidden=true, opacity-0 이지만 JS 클릭으로 강제 활성화 가능
-            select_all_cb = driver.find_elements(By.CSS_SELECTOR, "input[aria-label='모두 선택']")
-            if select_all_cb:
-                print("➡️ '모두 선택' 체크박스 클릭 (JS)")
-                driver.execute_script("arguments[0].click();", select_all_cb[0])
-                time.sleep(2)
+            # ── DOM 진단: 실제 라이브러리 페이지 구조 확인 ──
+            diag = driver.execute_script("""
+                const info = {};
+                info.url = window.location.href;
+                info.viewport = { w: window.innerWidth, h: window.innerHeight };
+                info.inputs = [];
+                document.querySelectorAll('input').forEach(el => {
+                    info.inputs.push({
+                        type: el.type,
+                        ariaLabel: el.getAttribute('aria-label'),
+                        ariaHidden: el.getAttribute('aria-hidden'),
+                        checked: el.checked,
+                        className: el.className.substring(0, 80)
+                    });
+                });
+                info.bridgeButtons = document.querySelectorAll('button[data-testid^="artifact-checkbox-bridge-"]').length;
+                info.pageTableHeader = !!document.querySelector('[data-page-table-list-header]');
+                info.rows = document.querySelectorAll('[role="row"]').length;
+                info.selectableRows = document.querySelectorAll('[data-page-table-selectable-row]').length;
+                info.allButtons = document.querySelectorAll('button').length;
+                info.threeDotsButtons = document.querySelectorAll('button[aria-label*="작업 메뉴"]').length;
+                // 첫 번째 row의 구조 확인
+                const firstRow = document.querySelector('[role="row"]');
+                if (firstRow) {
+                    info.firstRowHTML = firstRow.innerHTML.substring(0, 500);
+                }
+                return JSON.stringify(info, null, 2);
+            """)
+            print(f"  [DOM 진단]\n{diag}")
 
-                # 체크박스 선택 후 나타나는 삭제 버튼 찾기
-                # 보통 상단에 floating action bar로 "삭제" 버튼이 나타남
+            # ── (A-1) 라이브러리 아이템 전체 선택 후 일괄 삭제 시도 ──
+            # React/Radix UI 체크박스는 단순 .click()으로 상태가 안 바뀜
+            # 여러 전략을 순차 시도하고, 체크 여부를 확인
+            
+            bulk_selected = False
+
+            
+            # 전략1: 헤더 bridge button에 full mouse event sequence dispatch
+            result = driver.execute_script("""
+                const header = document.querySelector('[data-page-table-list-header]');
+                if (!header) return 'no-header';
+                const bridgeBtn = header.querySelector('button');
+                if (!bridgeBtn) return 'no-bridge';
+                
+                // Full pointer/mouse event sequence
+                const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                events.forEach(type => {
+                    bridgeBtn.dispatchEvent(new PointerEvent(type, {
+                        bubbles: true, cancelable: true, view: window,
+                        pointerId: 1, pointerType: 'mouse'
+                    }));
+                });
+                
+                // 체크 결과 확인
+                const checked = document.querySelectorAll('input[type="checkbox"]:checked').length;
+                return 'events-dispatched:checked=' + checked;
+            """)
+            print(f"  [디버그] 전략1 (헤더 bridge event dispatch): {result}")
+            time.sleep(2)
+            
+            # 체크된 게 있으면 성공
+            checked_count = driver.execute_script(
+                "return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;"
+            )
+            if checked_count > 0:
+                bulk_selected = True
+                print(f"➡️ '모두 선택' 성공 — {checked_count}개 체크됨")
+            
+            # 전략2: 개별 아이템 bridge button 전부 클릭
+            if not bulk_selected:
+                result2 = driver.execute_script("""
+                    const bridges = document.querySelectorAll('button[data-testid^="artifact-checkbox-bridge-"]');
+                    let clicked = 0;
+                    bridges.forEach(btn => {
+                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
+                            btn.dispatchEvent(new PointerEvent(type, {
+                                bubbles: true, cancelable: true, view: window,
+                                pointerId: 1, pointerType: 'mouse'
+                            }));
+                        });
+                        clicked++;
+                    });
+                    return clicked;
+                """)
+                print(f"  [디버그] 전략2 (개별 bridge buttons): {result2}개 클릭")
+                time.sleep(2)
+                
+                checked_count = driver.execute_script(
+                    "return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;"
+                )
+                if checked_count > 0:
+                    bulk_selected = True
+                    print(f"➡️ 개별 선택 성공 — {checked_count}개 체크됨")
+            
+            # 전략3: Selenium ActionChains로 실제 마우스 클릭
+            if not bulk_selected:
+                try:
+                    cb_el = driver.find_element(
+                        By.CSS_SELECTOR, "input[aria-label='모두 선택']"
+                    )
+                    # 체크박스를 뷰포트로 스크롤 후 ActionChains 클릭
+                    driver.execute_script(
+                        "arguments[0].closest('.absolute').style.position='relative';"
+                        "arguments[0].closest('.absolute').style.left='0';"
+                        "arguments[0].closest('.absolute').style.opacity='1';",
+                        cb_el
+                    )
+                    time.sleep(0.5)
+                    ActionChains(driver).move_to_element(cb_el).click().perform()
+                    time.sleep(2)
+                    
+                    checked_count = driver.execute_script(
+                        "return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;"
+                    )
+                    if checked_count > 0:
+                        bulk_selected = True
+                        print(f"➡️ ActionChains 클릭 성공 — {checked_count}개 체크됨")
+                    else:
+                        print(f"  [디버그] 전략3 (ActionChains): 체크됨 {checked_count}개")
+                except Exception as e:
+                    print(f"  [디버그] 전략3 실패: {e}")
+            
+            # 일괄 삭제 실행
+            if bulk_selected:
+                # 삭제 버튼 찾기
                 bulk_delete_btn = driver.find_elements(
                     By.XPATH,
                     "//button[contains(., '삭제')]"
@@ -270,14 +462,8 @@ def login_and_reset(driver, target_email):
 
                     # 확인 모달의 '삭제' 버튼
                     confirm_btns = driver.find_elements(
-                        By.XPATH,
-                        "//button[contains(@class, 'btn-danger') and contains(., '삭제')]"
+                        By.CSS_SELECTOR, "button.btn-danger"
                     )
-                    if not confirm_btns:
-                        confirm_btns = driver.find_elements(
-                            By.XPATH,
-                            "//dialog//button[contains(., '삭제')] | //div[@role='dialog']//button[contains(., '삭제')]"
-                        )
                     if not confirm_btns:
                         confirm_btns = driver.find_elements(
                             By.XPATH,
@@ -293,7 +479,7 @@ def login_and_reset(driver, target_email):
                 else:
                     print("⚠️ 일괄 삭제 버튼이 나타나지 않았습니다.")
             else:
-                print("ℹ️ '모두 선택' 체크박스를 찾지 못했습니다.")
+                print("ℹ️ 라이브러리 일괄 선택 실패 — 개별 삭제로 전환합니다.")
 
             time.sleep(2)
 
@@ -427,65 +613,65 @@ def login_and_reset(driver, target_email):
                     time.sleep(1)
                     break
 
-            # ===== (C) 프로필 → 설정 메뉴 진입 =====
-            print("➡️ 프로필 버튼 클릭")
-            time.sleep(2)
-            # data-testid='accounts-profile-button'이 2개 존재 (tiny-bar는 inert)
-            # 마지막 요소가 실제 활성 버튼
-            profile_btns = driver.find_elements(
-                By.CSS_SELECTOR, "[data-testid='accounts-profile-button']"
-            )
-            if profile_btns:
-                active_btn = profile_btns[-1]
-                # ActionChains로 실제 마우스 이벤트 발생 (div[role=button]에 안정적)
-                try:
-                    ActionChains(driver).move_to_element(active_btn).click().perform()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", active_btn)
-            else:
-                print("⚠️ 프로필 버튼을 찾지 못했습니다.")
-            time.sleep(2)  # 드롭다운 렌더링 대기
 
-            print("➡️ '설정' 클릭")
-            # 프로필 드롭다운 메뉴는 Radix portal로 렌더링됨
-            # aria-label 또는 텍스트 기반으로 찾기
-            settings_menus = driver.find_elements(
-                By.XPATH,
-                "//div[@role='menuitem' and contains(., '설정')]"
+
+            # ===== (D) 설정 → 보안 → 모두 로그아웃 =====
+            print("➡️ 설정 > 보안 페이지로 이동")
+            driver.get("https://chatgpt.com/#settings/Security")
+            time.sleep(4)  # 설정 모달 로딩 대기
+
+            # '모두 로그아웃' 버튼 클릭
+            print("➡️ '모두 로그아웃' 버튼 클릭")
+            logout_all_btn = driver.find_elements(
+                By.CSS_SELECTOR, "[data-testid='logout-all-button']"
             )
-            if not settings_menus:
-                # 대안: menuitem이 아닌 일반 텍스트 링크
-                settings_menus = driver.find_elements(
+            if not logout_all_btn:
+                logout_all_btn = driver.find_elements(
                     By.XPATH,
-                    "//*[@role='menu']//*[contains(text(), '설정')]"
+                    "//button[contains(., '모두 로그아웃')]"
                 )
-            if not settings_menus:
-                # data-testid 기반 폴백
-                settings_menus = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "[data-testid='settings-menu-item']"
+            if logout_all_btn:
+                driver.execute_script("arguments[0].click();", logout_all_btn[0])
+                time.sleep(3)  # 확인 팝업 대기
+
+                # '모든 기기에서 로그아웃' 확인 버튼 클릭
+                print("➡️ '모든 기기에서 로그아웃' 확인 클릭")
+                confirm_logout = driver.find_elements(
+                    By.XPATH,
+                    "//button[contains(@class, 'btn-danger') and contains(., '모든 기기에서 로그아웃')]"
                 )
-            if settings_menus:
-                driver.execute_script("arguments[0].click();", settings_menus[0])
-                time.sleep(2)
-            else:
-                print("⚠️ '설정' 버튼을 찾지 못했습니다. 페이지 디버깅 필요.")
-                # 디버그: 현재 열린 메뉴의 내용 출력
-                menus = driver.find_elements(By.XPATH, "//*[@role='menu']//*")
-                if menus:
-                    print(f"  [디버그] 메뉴 내 요소 {len(menus)}개 발견:")
-                    for m in menus[:10]:
-                        print(f"    - tag={m.tag_name}, text='{m.text[:50] if m.text else ''}', role={m.get_attribute('role')}")
+                if not confirm_logout:
+                    confirm_logout = driver.find_elements(
+                        By.XPATH,
+                        "//dialog//button[contains(., '모든 기기에서 로그아웃')] | //div[@role='dialog']//button[contains(., '모든 기기에서 로그아웃')]"
+                    )
+                if not confirm_logout:
+                    confirm_logout = driver.find_elements(
+                        By.XPATH,
+                        "//button[.//div[contains(text(), '모든 기기에서 로그아웃')]]"
+                    )
+                if confirm_logout:
+                    driver.execute_script("arguments[0].click();", confirm_logout[-1])
+                    time.sleep(5)  # 로그아웃 처리 및 리디렉션 대기
+                    print("✅ 모든 기기에서 로그아웃 완료")
                 else:
-                    print("  [디버그] role='menu' 요소가 없습니다.")
+                    print("⚠️ '모든 기기에서 로그아웃' 확인 버튼을 찾지 못했습니다.")
+            else:
+                print("⚠️ '모두 로그아웃' 버튼을 찾지 못했습니다.")
 
         except Exception as e:
             print(f"⚠️ 초기화 단계 자동 클릭 중 오류 발생: {e}")
-        
-        print("🚨 [1차 구현 완료] 여기까지 코드가 구현되었습니다.")
-        input("👉 결과 확인 및 수동 로그아웃 후 다음 계정으로 넘어가려면 [Enter]를 누르세요...")
-        
-        print("✅ 작업 완료. 컨텍스트를 초기화합니다.")
+
+        # 로그아웃 후 초기 화면 복귀 확인
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='login-button']"))
+            )
+            print("🟢 로그인 화면 복귀 확인!")
+        except:
+            print("⚠️ 로그인 화면 복귀를 자동 감지하지 못했습니다. (이미 로그아웃 되었을 수 있습니다)")
+
+        print(f"✅ {target_email} 계정 초기화 완료!")
 
     except Exception as e:
         print(f"❌ 작업 중 에러 발생: {e}")
@@ -505,16 +691,14 @@ def main():
         
     print(f"총 {len(target_numbers)}개의 계정에 대해 작업을 시작합니다: {target_numbers}")
     
-    # 봇 탐지 우회를 위해 undetected_chromedriver 사용
-    options = uc.ChromeOptions()
-    # 필요하다면 프로필 폴더를 지정할 수 있으나 계정 전환을 위해 매번 새 세션 권장
-    
     for num in target_numbers:
         target_email = f"gpt{num}@ablearn.kr"
         
         # 매 계정마다 브라우저를 새로 열어 쿠키/세션을 완전 초기화
-        # 사용자의 Chrome 버전에 맞게 version_main=147 추가
+        # undetected_chromedriver는 ChromeOptions 재사용 불가 → 매번 새로 생성
+        options = uc.ChromeOptions()
         driver = uc.Chrome(options=options, version_main=147)
+        driver.set_window_size(1920, 1080)  # 넓은 뷰포트 — 체크박스 렌더링에 필요
         
         login_and_reset(driver, target_email)
         
