@@ -97,6 +97,15 @@ def get_openai_code(email_user, email_pass, target_email, login_timestamp=None, 
                         if "openai" not in sender and "chatgpt" not in sender and target_email.lower() not in sender:
                             continue
 
+                        # ★ 수신자(To) 확인 — 다른 계정의 코드 혼동 방지
+                        to_header = str(msg.get("To", "")).lower()
+                        delivered_to = str(msg.get("Delivered-To", "")).lower()
+                        x_original_to = str(msg.get("X-Original-To", "")).lower()
+                        if (target_email.lower() not in to_header 
+                            and target_email.lower() not in delivered_to 
+                            and target_email.lower() not in x_original_to):
+                            continue
+
                         # 메일 수신 시간 확인 — 로그인 요청 시점 이후의 메일만 인정
                         try:
                             mail_date = email.utils.parsedate_to_datetime(msg.get("Date"))
@@ -462,8 +471,12 @@ def login_and_reset(driver, target_email):
 
                     # 확인 모달의 '삭제' 버튼
                     confirm_btns = driver.find_elements(
-                        By.CSS_SELECTOR, "button.btn-danger"
+                        By.CSS_SELECTOR, "button[data-testid='confirm-delete-recall-file-button']"
                     )
+                    if not confirm_btns:
+                        confirm_btns = driver.find_elements(
+                            By.CSS_SELECTOR, "button.btn-danger"
+                        )
                     if not confirm_btns:
                         confirm_btns = driver.find_elements(
                             By.XPATH,
@@ -527,9 +540,14 @@ def login_and_reset(driver, target_email):
                     # 확인 모달의 '삭제' 버튼 클릭
                     # 모달의 빨간 삭제 버튼은 보통 btn-danger 또는 btn-primary 클래스
                     confirm_btns = driver.find_elements(
-                        By.XPATH,
-                        "//button[contains(@class, 'btn-danger') and contains(., '삭제')]"
+                        By.CSS_SELECTOR,
+                        "button[data-testid='confirm-delete-recall-file-button']"
                     )
+                    if not confirm_btns:
+                        confirm_btns = driver.find_elements(
+                            By.XPATH,
+                            "//button[contains(@class, 'btn-danger') and contains(., '삭제')]"
+                        )
                     if not confirm_btns:
                         # 대안: dialog 내부의 삭제 버튼
                         confirm_btns = driver.find_elements(
