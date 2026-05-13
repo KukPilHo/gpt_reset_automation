@@ -8,158 +8,175 @@
       font-family: 'Pretendard', 'Malgun Gothic', sans-serif; 
       padding: 0; 
       margin: 0; 
-      width: 420px; 
+      width: 460px; 
       background-color: #f4f6f9; 
       color: #333; 
     }
     .header { 
-      background-color: #1a73e8; 
+      background: linear-gradient(135deg, #1a73e8, #4285f4);
       color: white; 
-      padding: 16px; 
+      padding: 14px 16px; 
       text-align: center; 
       font-weight: bold; 
-      font-size: 16px; 
+      font-size: 15px; 
       letter-spacing: -0.5px;
     }
     .container { 
-      padding: 16px; 
+      padding: 14px; 
     }
     
+    /* Step card */
     .step-box { 
       background: white; 
       border-radius: 10px; 
-      padding: 16px; 
-      margin-bottom: 16px; 
+      padding: 14px 16px; 
+      margin-bottom: 12px; 
       box-shadow: 0 2px 6px rgba(0,0,0,0.05); 
     }
     .step-title { 
-      font-size: 14px; 
+      font-size: 13px; 
       font-weight: bold; 
       color: #1a73e8; 
       margin-bottom: 10px; 
       display: flex; 
       align-items: center; 
     }
-    .step-title span { 
+    .step-title .num { 
       display: inline-flex; 
       justify-content: center;
       align-items: center;
       background: #e8f0fe; 
       color: #1a73e8; 
-      width: 22px; 
-      height: 22px; 
+      width: 20px; 
+      height: 20px; 
       border-radius: 50%; 
       margin-right: 8px; 
-      font-size: 13px; 
+      font-size: 12px;
+      flex-shrink: 0;
     }
     .step-desc { 
-      font-size: 13px; 
-      color: #555; 
+      font-size: 12px; 
+      color: #666; 
       line-height: 1.5; 
       margin-bottom: 12px; 
       word-break: keep-all;
     }
-    .highlight { 
-      background-color: #fef0cd; 
-      padding: 2px 5px; 
-      border-radius: 4px; 
-      font-weight: 600; 
-      color: #b06000;
-    }
     .tip-box {
-      background-color: #f8fbff;
+      background-color: #f0f7ff;
       border-left: 3px solid #1a73e8;
-      padding: 10px 12px;
-      font-size: 12px;
+      padding: 8px 10px;
+      font-size: 11px;
       color: #555;
       margin-top: 10px;
       border-radius: 0 6px 6px 0;
+      line-height: 1.5;
+    }
+    .highlight { 
+      background-color: #fef0cd; 
+      padding: 1px 4px; 
+      border-radius: 3px; 
+      font-weight: 600; 
+      color: #b06000;
+      font-size: 11px;
     }
 
-    /* Textarea for pasting */
-    textarea.paste-area { 
-      width: 100%; 
-      height: 80px; 
-      padding: 12px; 
-      border: 2px dashed #90bbf4; 
-      border-radius: 8px; 
-      resize: none; 
-      font-size: 13px; 
-      box-sizing: border-box; 
-      background-color: #fff; 
-      outline: none; 
-      transition: all 0.2s ease; 
-      color: #333;
-    }
-    textarea.paste-area::placeholder {
-      color: #999;
-    }
-    textarea.paste-area:focus { 
-      border-color: #1a73e8; 
-      background-color: #f8fbff;
-    }
-
-    /* Preview Table */
-    .table-wrapper { 
-      max-height: 160px; 
-      overflow-y: auto; 
-      border: 1px solid #e0e0e0; 
+    /* ===== Excel-like Grid ===== */
+    .grid-wrapper { 
+      border: 2px solid #dadce0; 
       border-radius: 6px; 
+      overflow: hidden;
+    }
+    .grid-scroll {
+      max-height: 220px;
+      overflow-y: auto;
     }
     table { 
       width: 100%; 
       border-collapse: collapse; 
+      table-layout: fixed;
     }
-    th, td { 
-      border-bottom: 1px solid #eee; 
-      padding: 8px 10px; 
+    /* Row number column */
+    col.col-num { width: 32px; }
+    col.col-email { width: auto; }
+    col.col-gpt { width: 42%; }
+
+    thead th { 
+      background-color: #f1f3f4; 
+      border-bottom: 2px solid #dadce0;
+      padding: 6px 4px; 
       text-align: center; 
-      font-size: 12px; 
-    }
-    th { 
-      background-color: #f8f9fa; 
+      font-size: 11px; 
+      font-weight: 600;
+      color: #5f6368;
       position: sticky; 
       top: 0; 
-      color: #444; 
-      font-weight: 600; 
-      z-index: 1;
+      z-index: 2;
+      user-select: none;
     }
+    thead th.corner {
+      background-color: #e8eaed;
+      border-right: 1px solid #dadce0;
+    }
+
+    tbody td { 
+      border-bottom: 1px solid #e8eaed; 
+      border-right: 1px solid #e8eaed;
+      padding: 0; 
+      text-align: center; 
+      font-size: 12px;
+      height: 28px;
+    }
+    tbody td:last-child { border-right: none; }
+
+    /* Row number cell */
+    td.row-num {
+      background-color: #f1f3f4;
+      color: #80868b;
+      font-size: 11px;
+      font-weight: 500;
+      border-right: 1px solid #dadce0;
+      user-select: none;
+      text-align: center;
+      padding: 0 2px;
+    }
+
     td input { 
-      width: 95%; 
-      border: 1px solid transparent; 
+      width: 100%; 
+      border: none;
+      outline: none;
       text-align: center; 
       font-size: 12px; 
       padding: 6px 4px; 
-      border-radius: 4px; 
       background: transparent;
-      transition: border 0.2s;
+      box-sizing: border-box;
+      color: #333;
+    }
+    td input::placeholder {
+      color: #bbb;
+      font-style: italic;
     }
     td input:focus { 
-      border: 1px solid #1a73e8; 
-      outline: none; 
-      background: #fff; 
+      background: #e8f0fe; 
     }
-    td input:hover {
-      background: #f8f9fa;
+    /* Example row styling */
+    tr.example-row td input {
+      color: #999;
     }
-    
-    .empty-state { 
-      text-align: center; 
-      padding: 25px 10px; 
-      color: #999; 
-      font-size: 13px; 
+    tr.example-row td input:focus {
+      color: #333;
     }
 
+    /* ===== Buttons ===== */
     .actions { 
       display: flex; 
       justify-content: space-between; 
-      margin-top: 5px; 
+      margin-top: 8px; 
     }
     .btn { 
       border: none; 
-      padding: 12px 16px; 
+      padding: 11px 16px; 
       border-radius: 8px; 
-      font-size: 14px; 
+      font-size: 13px; 
       font-weight: bold; 
       cursor: pointer; 
       transition: all 0.2s; 
@@ -168,14 +185,12 @@
       background-color: #e8eaed; 
       color: #5f6368; 
     }
-    .btn-clear:hover { 
-      background-color: #dadce0; 
-    }
+    .btn-clear:hover { background-color: #dadce0; }
     .btn-start { 
       background-color: #1a73e8; 
       color: white; 
       flex-grow: 1; 
-      margin-left: 12px; 
+      margin-left: 10px; 
       box-shadow: 0 2px 4px rgba(26,115,232,0.25); 
     }
     .btn-start:hover { 
@@ -187,10 +202,9 @@
       box-shadow: none; 
       cursor: not-allowed; 
     }
-
     #status { 
-      margin-top: 15px; 
-      font-size: 13px; 
+      margin-top: 12px; 
+      font-size: 12px; 
       font-weight: 600; 
       text-align: center; 
       color: #1a73e8; 
@@ -200,38 +214,39 @@
   </style>
 </head>
 <body>
-  <div class="header">
-    에이블런 그룹스 일괄 등록기
-  </div>
+  <div class="header">에이블런 그룹스 일괄 등록기</div>
   <div class="container">
     
     <div class="step-box">
-      <div class="step-title"><span>1</span>데이터 준비 및 붙여넣기</div>
+      <div class="step-title"><span class="num">1</span>데이터 입력</div>
       <div class="step-desc">
-        엑셀(또는 스프레드시트)에서 <b>[등록할 이메일]</b>과 <b>[할당할 GPT 계정]</b> 두 열을 드래그하여 복사한 후, 아래 빈 칸에 붙여넣기(<kbd>Ctrl</kbd> + <kbd>V</kbd>) 해주세요.
+        아래 표에 <b>직접 입력</b>하거나, 엑셀/스프레드시트에서 두 열을 복사한 뒤 표의 아무 셀에 <b>Ctrl+V</b>로 붙여넣으세요.
       </div>
-      <textarea id="pasteArea" class="paste-area" placeholder="여기를 클릭하고 복사한 데이터를 붙여넣으세요 (Ctrl+V)"></textarea>
-      
-      <div class="tip-box">
-        💡 <b>입력 꿀팁</b><br>
-        GPT 계정은 <span class="highlight">gpt10</span> 처럼 숫자만 쓰거나, <span class="highlight">gpt10@ablearn.kr</span> 처럼 전체 이메일을 써도 모두 자동 인식됩니다!
-      </div>
-    </div>
 
-    <div class="step-box">
-      <div class="step-title"><span>2</span>데이터 확인</div>
-      <div class="table-wrapper">
-        <table id="previewTable">
-          <thead>
-            <tr>
-              <th width="60%">등록할 이메일 (A열)</th>
-              <th width="40%">할당할 GPT 계정 (B열)</th>
-            </tr>
-          </thead>
-          <tbody id="gridBody">
-            <tr><td colspan="2" class="empty-state">위 칸에 데이터를 붙여넣으면 표가 생성됩니다.</td></tr>
-          </tbody>
-        </table>
+      <div class="grid-wrapper">
+        <div class="grid-scroll">
+          <table id="excelGrid">
+            <colgroup>
+              <col class="col-num">
+              <col class="col-email">
+              <col class="col-gpt">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="corner"></th>
+                <th>등록할 이메일 (A)</th>
+                <th>할당할 GPT 계정 (B)</th>
+              </tr>
+            </thead>
+            <tbody id="gridBody">
+              <!-- JS가 초기 행 생성 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tip-box">
+        💡 GPT 계정은 <span class="highlight">gpt10</span> 또는 <span class="highlight">gpt10@ablearn.kr</span> 형태 모두 OK!&nbsp;&nbsp;|&nbsp;&nbsp;빈 행은 자동으로 무시됩니다.
       </div>
     </div>
 
@@ -241,7 +256,6 @@
     </div>
     
     <div id="status"></div>
-
   </div>
   
   <script src="popup.js"></script>
