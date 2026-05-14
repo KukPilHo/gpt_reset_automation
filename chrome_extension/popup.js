@@ -2,6 +2,7 @@ const gridBody = document.getElementById('gridBody');
 const startBtn = document.getElementById('startBtn');
 const clearBtn = document.getElementById('clearBtn');
 const statusDiv = document.getElementById('status');
+const logArea = document.getElementById('logArea');
 
 // ===== 행(Row) 생성 =====
 function createRow(email = '', gpt = '', isExample = false) {
@@ -134,6 +135,7 @@ function initGrid() {
 clearBtn.addEventListener('click', () => {
   initGrid();
   statusDiv.innerText = '';
+  logArea.innerHTML = '';
   startBtn.disabled = false;
 });
 
@@ -166,12 +168,15 @@ startBtn.addEventListener('click', () => {
   }
 
   statusDiv.innerText = `총 ${tasks.length}명 작업 시작...`;
+  logArea.innerHTML = '';
   startBtn.disabled = true;
 
   chrome.runtime.sendMessage({ action: "startJobs", tasks: tasks }, (response) => {
     if (response && response.status === "done") {
-      statusDiv.innerText += "\n\n🎉 모든 작업이 끝났습니다!";
+      const msg = `🎉 작업이 모두 완료되었습니다!\n\n성공: ${response.results.successCount}건\n실패: ${response.results.failCount}건`;
+      statusDiv.innerText += "\n\n" + msg;
       startBtn.disabled = false;
+      alert(msg);
     }
   });
 });
@@ -180,6 +185,16 @@ startBtn.addEventListener('click', () => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === "updateStatus") {
     statusDiv.innerText = msg.text;
+  } else if (msg.action === "logResult") {
+    const div = document.createElement('div');
+    div.innerText = msg.text;
+    if (msg.text.includes('❌')) {
+      div.style.color = '#d32f2f'; // 에러 시 붉은색
+    } else {
+      div.style.color = '#388e3c'; // 성공 시 초록색
+    }
+    logArea.appendChild(div);
+    logArea.scrollTop = logArea.scrollHeight;
   }
 });
 

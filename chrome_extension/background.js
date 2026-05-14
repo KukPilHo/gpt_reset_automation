@@ -1,7 +1,7 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "startJobs") {
-    processJobs(request.tasks).then(() => {
-      sendResponse({ status: "done" });
+    processJobs(request.tasks).then((results) => {
+      sendResponse({ status: "done", results: results });
     });
     return true; // 비동기 응답 대기
   }
@@ -39,52 +39,127 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function processJobs(tasks) {
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i];
-    const url = `https://groups.google.com/a/ablearn.kr/g/${task.gpt}/members`;
-    
-    chrome.runtime.sendMessage({ action: "updateStatus", text: `[${i+1}/${tasks.length}] ${task.email} 님을 ${task.gpt} 에 추가 중...` });
-
-    // 탭 생성
-    const tab = await chrome.tabs.create({ url: url, active: true });
-
-    // 탭 로딩 완료 대기
-    await new Promise(resolve => {
-      chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-        if (tabId === tab.id && info.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
-          setTimeout(resolve, 2000); // 로딩 후 2초 안정화
-        }
-      });
-    });
-
-    // 화면 자동화 스크립트 실행
-    try {
-      // Playwright 와 똑같은 하드웨어 제어 권한(디버거) 부여
-      await new Promise(r => chrome.debugger.attach({tabId: tab.id}, "1.3", r));
-      
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-
-      // 스크립트에 이메일 전달 후 끝날 때까지 대기
-      await new Promise((resolve) => {
-        chrome.tabs.sendMessage(tab.id, { action: "runAddMember", email: task.email }, (res) => {
-          resolve(res);
+  const MAX_CONCURRENT = 3;
+  let activeCount = 0;
+  let currentIndex = 0;
+  let completedCount = 0;
+  let successCount = 0;
+  let failCount = 0;
+  
+  const startTime = Date.now();
+  const jobResults = [];
+  
+  return new Promise((resolve) => {
+    async function runNext() {
+      if (currentIndex >= tasks.length && activeCount === 0) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon.png',
+          title: 'GPT 자동화 완료',
+          message: `작업 완료 - 성공: ${successCount}건, 실패: ${failCount}건`
         });
-      });
+        
+        const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+        
+        // 결과 저장 및 리포트 탭 열기
+        chrome.storage.local.set({
+          gptAutoResults: {
+            tasksTotal: tasks.length,
+            successCount,
+            failCount,
+            elapsedTime,
+            jobResults
+          }
+        }, () => {
+          chrome.tabs.create({ url: chrome.runtime.getURL("report.html") });
+        });
+        
+        resolve({ successCount, failCount });
+        return;
+      }
       
-      // 디버거 연결 해제
-      await new Promise(r => chrome.debugger.detach({tabId: tab.id}, r));
-    } catch(e) {
-      console.error(e);
+      while (activeCount < MAX_CONCURRENT && currentIndex < tasks.length) {
+        const i = currentIndex++;
+        const task = tasks[i];
+        activeCount++;
+        
+        processSingleJob(task, i, tasks.length).then((result) => {
+          if (result.success) {
+            successCount++;
+            chrome.runtime.sendMessage({ action: "logResult", text: `✅ 성공: ${task.email}` });
+            jobResults.push({ email: task.email, gpt: task.gpt, status: 'OK' });
+          } else {
+            failCount++;
+            chrome.runtime.sendMessage({ action: "logResult", text: `❌ 실패: ${task.email}` });
+            jobResults.push({ email: task.email, gpt: task.gpt, status: 'FAIL', reason: result.error });
+          }
+        }).finally(() => {
+          activeCount--;
+          completedCount++;
+          chrome.runtime.sendMessage({ action: "updateStatus", text: `진행도: ${completedCount}/${tasks.length} 완료 (동시 처리 중...)` });
+          runNext();
+        });
+      }
     }
     
-    // 작업 완료 후 탭 닫기
-    await chrome.tabs.remove(tab.id);
+    // 처음 실행
+    runNext();
+  });
+}
+
+async function processSingleJob(task, index, total) {
+  const url = `https://groups.google.com/a/ablearn.kr/g/${task.gpt}/members`;
+  let result = { success: false, error: "알 수 없는 오류" };
+
+  // 탭 생성 (백그라운드에서 열기)
+  const tab = await chrome.tabs.create({ url: url, active: false });
+
+  // 탭 로딩 완료 대기
+  await new Promise(resolve => {
+    chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+      if (tabId === tab.id && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        setTimeout(resolve, 2000); // 로딩 후 2초 안정화
+      }
+    });
+  });
+
+  // 화면 자동화 스크립트 실행
+  try {
+    // 디버거 연결
+    await new Promise(r => chrome.debugger.attach({tabId: tab.id}, "1.3", r));
     
-    // 다음 사람 작업 전 1초 대기
-    await new Promise(r => setTimeout(r, 1000));
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content.js']
+    });
+
+    // 스크립트에 이메일 전달 후 끝날 때까지 대기
+    let res = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(tab.id, { action: "runAddMember", email: task.email }, (res) => {
+        resolve(res);
+      });
+    });
+    if (res && res.success) {
+      result = { success: true };
+    } else if (res && res.error) {
+      result = { success: false, error: res.error };
+    } else {
+      result = { success: false, error: "응답 시간 초과 또는 알 수 없는 에러" };
+    }
+    
+    // 디버거 연결 해제
+    await new Promise(r => chrome.debugger.detach({tabId: tab.id}, r));
+  } catch(e) {
+    console.error(e);
+    result = { success: false, error: e.toString() };
   }
+  
+  // 작업 완료 후 탭 닫기
+  await chrome.tabs.remove(tab.id);
+  
+  // 다음 사람 작업 전 약간 대기 (안정성)
+  await new Promise(r => setTimeout(r, 1000));
+  
+  return result;
 }

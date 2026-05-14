@@ -1,16 +1,21 @@
+"""
+GPT 계정 초기화 엔진
+기존 reset_gpt_accounts_parallel.py의 핵심 로직을 최소 변경으로 래핑합니다.
+
+변경된 부분:
+- log() → log_callback 콜백 기반
+- .env → config dict 파라미터
+- main() → run_reset() 함수
+- process_account() 내부 로직은 변경 없음
+"""
 import os
 import re
 import time
-import sys
 import shutil
-import imaplib
-import email
-import email.utils
 import tempfile
 from datetime import datetime, timezone, timedelta
-from email.header import decode_header
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dotenv import load_dotenv
+
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -18,160 +23,52 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-# .env 파일 로드
-load_dotenv()
-
-# ================= 설정 부분 =================
-MASTER_EMAIL = os.getenv("MASTER_EMAIL")
-APP_PASSWORD = os.getenv("APP_PASSWORD")
-COMMON_PASSWORD = os.getenv("COMMON_PASSWORD")
-
-MAX_WORKERS = 2  # 동시 최대 실행 수
-# ===========================================
-
-def parse_ranges(range_str):
-    """'1~10, 12, 15~17' 형식의 문자열을 정수 리스트로 변환합니다."""
-    numbers = []
-    parts = [p.strip() for p in range_str.split(',')]
-    for part in parts:
-        if not part:
-            continue
-        if '~' in part:
-            try:
-                start_str, end_str = part.split('~')
-                start = int(start_str)
-                end = int(end_str)
-                numbers.extend(range(start, end + 1))
-            except ValueError:
-                print(f"⚠️ 경고: 잘못된 범위 형식입니다 '{part}'")
-        else:
-            try:
-                numbers.append(int(part))
-            except ValueError:
-                print(f"⚠️ 경고: 잘못된 숫자 형식입니다 '{part}'")
-    return sorted(list(set(numbers)))
+from utils.imap_helper import get_openai_code
 
 
-def log(tag, msg):
-    """계정 태그를 붙여 로그 출력 (스레드 안전)"""
-    print(f"[{tag}] {msg}", flush=True)
-
-
-def get_openai_code(email_user, email_pass, target_email, login_timestamp=None, max_retries=10, delay=5, tag=""):
-    """IMAP을 사용하여 이메일함에서 OpenAI 인증 코드를 추출합니다."""
-    log(tag, f"📧 이메일 인증 코드 확인 중...")
+def process_account(num, config, log_callback, stop_event=None):
+    """하나의 계정에 대한 전체 초기화 프로세스 (독립 스레드에서 실행)
     
-    if login_timestamp is None:
-        login_timestamp = datetime.now(timezone.utc) - timedelta(minutes=2)
-    
-    for attempt in range(max_retries):
-        try:
-            mail = imaplib.IMAP4_SSL("imap.gmail.com")
-            mail.login(email_user, email_pass)
-            mail.select('"[Gmail]/&yATMtLz0rQDVaA-"')
+    ※ 기존 reset_gpt_accounts_parallel.py의 process_account()와 동일한 로직.
+       log()를 로컬 함수로 래핑하여 콜백을 사용합니다.
+    """
+    # --- 콜백 래핑: 기존 log(tag, msg) 호출을 그대로 유지 ---
+    def log(tag, msg):
+        if log_callback:
+            log_callback(tag, msg)
 
-            status, messages = mail.search(None, 'ALL')
-            if status != "OK":
-                mail.logout()
-                time.sleep(delay)
-                continue
+    # --- 설정값을 로컬 변수로 할당: 기존 전역 변수 참조를 그대로 유지 ---
+    MASTER_EMAIL = config["master_email"]
+    APP_PASSWORD = config["app_password"]
+    COMMON_PASSWORD = config["common_password"]
 
-            mail_ids = messages[0].split()
-            if not mail_ids:
-                mail.logout()
-                time.sleep(delay)
-                continue
-
-            found_code = None
-            for mail_id in reversed(mail_ids[-20:]):
-                status, msg_data = mail.fetch(mail_id, '(RFC822)')
-                for response_part in msg_data:
-                    if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
-                        
-                        sender = str(msg.get("From", "")).lower()
-                        if "openai" not in sender and "chatgpt" not in sender and target_email.lower() not in sender:
-                            continue
-
-                        # ★ 수신자(To) 확인 — 병렬 처리 시 다른 계정의 코드 혼동 방지
-                        to_header = str(msg.get("To", "")).lower()
-                        delivered_to = str(msg.get("Delivered-To", "")).lower()
-                        x_original_to = str(msg.get("X-Original-To", "")).lower()
-                        if (target_email.lower() not in to_header 
-                            and target_email.lower() not in delivered_to 
-                            and target_email.lower() not in x_original_to):
-                            continue
-
-                        try:
-                            mail_date = email.utils.parsedate_to_datetime(msg.get("Date"))
-                            if mail_date < login_timestamp:
-                                continue
-                        except Exception:
-                            pass
-
-                        body = ""
-                        if msg.is_multipart():
-                            for part in msg.walk():
-                                content_type = part.get_content_type()
-                                content_disposition = str(part.get("Content-Disposition"))
-                                if content_type == "text/plain" and "attachment" not in content_disposition:
-                                    body = part.get_payload(decode=True).decode(errors='replace')
-                                    break
-                        else:
-                            body = msg.get_payload(decode=True).decode(errors='replace')
-
-                        body = re.sub(r'<style[^>]*>.*?</style>', ' ', body, flags=re.DOTALL|re.IGNORECASE)
-                        body = re.sub(r'<[^>]+>', ' ', body)
-                        body = re.sub(r'#\d{6}', ' ', body)
-
-                        match = re.search(r'(?<!\d)(\d{6})(?!\d)', body)
-                        if match:
-                            found_code = match.group(1)
-                            break
-                
-                if found_code:
-                    break
-            
-            mail.logout()
-            
-            if found_code:
-                return found_code
-        except Exception as e:
-            log(tag, f"⚠️ 이메일 확인 중 오류: {e}")
-        
-        log(tag, f"⏳ 인증 코드 대기 중... ({attempt + 1}/{max_retries})")
-        time.sleep(delay)
-
-    log(tag, "❌ 인증 코드를 찾을 수 없습니다.")
-    return None
-
-
-def process_account(num):
-    """하나의 계정에 대한 전체 초기화 프로세스 (독립 스레드에서 실행)"""
     target_email = f"gpt{num}@ablearn.kr"
     tag = f"gpt{num}"
-    
+
     # 독립 Chrome 프로필 디렉토리 생성
     profile_dir = os.path.join(tempfile.gettempdir(), f"chrome_profile_gpt{num}")
-    
+
     log(tag, "=========================================================")
     log(tag, f"🚀 작업 시작: {target_email}")
-    
+
     for overall_attempt in range(3):
+        if stop_event and stop_event.is_set():
+            return {"email": target_email, "status": "STOPPED", "reason": "사용자 중단"}
+
         if overall_attempt > 0:
             log(tag, f"🔄 브라우저 재시작 및 전체 과정 재시도 중... (시도 {overall_attempt + 1}/3)")
-            
+
         driver = None
         try:
             # 독립 Chrome 인스턴스 생성
             options = uc.ChromeOptions()
             options.add_argument(f"--user-data-dir={profile_dir}")
-            driver = uc.Chrome(options=options, version_main=147)
+            driver = uc.Chrome(options=options)
             driver.set_window_size(1920, 1080)
-            
+
             # ===== 1. 로그인 =====
             driver.get("https://chatgpt.com")
-            
+
             try:
                 login_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-testid='login-button']"))
@@ -198,7 +95,7 @@ def process_account(num):
                     if attempt < 2:
                         log(tag, f"⚠️ 이메일 입력창 재시도... ({attempt + 1}/2)")
                         time.sleep(3)
-            
+
             if not email_entered:
                 log(tag, "❌ 이메일 입력창을 찾지 못했습니다.")
                 if overall_attempt == 0: continue
@@ -208,7 +105,7 @@ def process_account(num):
             log(tag, "💡 비밀번호/인증 코드 대기...")
             found_pw = False
             found_code = False
-        
+
             for _ in range(10):
                 try:
                     if driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
@@ -220,7 +117,7 @@ def process_account(num):
                 except:
                     pass
                 time.sleep(1)
-        
+
             if found_pw:
                 log(tag, "🔑 비밀번호 입력")
                 try:
@@ -232,10 +129,10 @@ def process_account(num):
                         found_code = True
                 except:
                     pass
-        
+
             if found_code:
                 log(tag, "📩 인증 코드 필요")
-                code = get_openai_code(MASTER_EMAIL, APP_PASSWORD, target_email, login_timestamp=login_request_time, tag=tag)
+                code = get_openai_code(MASTER_EMAIL, APP_PASSWORD, target_email, login_timestamp=login_request_time, log_callback=log_callback)
                 if code:
                     log(tag, f"✅ 인증 코드: {code}")
                     try:
@@ -280,7 +177,7 @@ def process_account(num):
 
             # ===== 2. 초기화 작업 =====
             log(tag, "⚙️ 초기화 작업 시작...")
-        
+
             # --- (C) 채팅 기록 모두 삭제 ---
             log(tag, "➡️ 데이터 제어 > 모두 삭제")
             driver.get("https://chatgpt.com/#settings/DataControls")
@@ -292,7 +189,7 @@ def process_account(num):
             if delete_all_btn:
                 driver.execute_script("arguments[0].click();", delete_all_btn[0])
                 time.sleep(3)
-            
+
                 time.sleep(2)
                 confirm = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-all-chats-button']")
                 if not confirm:
@@ -543,31 +440,26 @@ def process_account(num):
                     shutil.rmtree(profile_dir, ignore_errors=True)
             except:
                 pass
-                
+
     return {"email": target_email, "status": "FAIL", "reason": "최대 재시도 횟수 초과"}
 
 
-def main():
-    print("=========================================================")
-    print("GPT 계정 자동 초기화 스크립트 (병렬 버전, 최대 3개 동시)")
-    print("=========================================================")
+def run_reset(target_numbers, max_workers, config, log_callback, stop_event=None):
+    """여러 계정의 초기화를 병렬로 실행합니다.
     
-    range_input = input("작업할 계정의 숫자 범위를 입력하세요 (예: 1~10, 12, 15~17): ")
-    target_numbers = parse_ranges(range_input)
-    
-    if not target_numbers:
-        print("❌ 유효한 계정 번호가 없습니다.")
-        sys.exit(1)
-        
-    print(f"총 {len(target_numbers)}개의 계정, 최대 {MAX_WORKERS}개 동시 실행: {target_numbers}")
-    print("=========================================================\n")
-    
+    기존 main()의 ThreadPoolExecutor 로직과 동일합니다.
+    """
+    log_callback("시스템", f"총 {len(target_numbers)}개의 계정, 최대 {max_workers}개 동시 실행: {target_numbers}")
+
     results = []
-    start_time = time.time()
-    
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(process_account, num): num for num in target_numbers}
-        
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for num in target_numbers:
+            if stop_event and stop_event.is_set():
+                break
+            future = executor.submit(process_account, num, config, log_callback, stop_event)
+            futures[future] = num
+
         for future in as_completed(futures):
             num = futures[future]
             try:
@@ -575,26 +467,10 @@ def main():
                 results.append(result)
             except Exception as e:
                 results.append({"email": f"gpt{num}@ablearn.kr", "status": "FAIL", "reason": str(e)})
-    
-    elapsed = time.time() - start_time
-    
-    # 결과 요약
-    print("\n=========================================================")
-    print("📊 작업 결과 요약")
-    print("=========================================================")
-    ok_count = 0
-    fail_count = 0
-    for r in sorted(results, key=lambda x: x["email"]):
-        if r["status"] == "OK":
-            print(f"  ✅ {r['email']}")
-            ok_count += 1
-        else:
-            print(f"  ❌ {r['email']} — {r.get('reason', '알 수 없음')}")
-            fail_count += 1
-    
-    print(f"\n성공: {ok_count}개 | 실패: {fail_count}개 | 소요 시간: {elapsed:.0f}초")
-    print("🎉 모든 작업이 끝났습니다!")
 
+    # 결과 요약 로그
+    ok_count = sum(1 for r in results if r["status"] == "OK")
+    fail_count = sum(1 for r in results if r["status"] != "OK")
+    log_callback("시스템", f"📊 완료 — 성공: {ok_count}개 | 실패: {fail_count}개")
 
-if __name__ == "__main__":
-    main()
+    return results

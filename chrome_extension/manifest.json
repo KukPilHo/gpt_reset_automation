@@ -6,7 +6,9 @@
   "permissions": [
     "scripting",
     "activeTab",
-    "debugger"
+    "debugger",
+    "notifications",
+    "storage"
   ],
   "host_permissions": [
     "https://groups.google.com/*"

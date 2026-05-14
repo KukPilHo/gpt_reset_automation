@@ -76,13 +76,42 @@ async function runAddMember(email) {
     confirmBtn.click();
     await wait(2000);
     
-    // 4. 확인 팝업 (Codegen: get_by_role("button", name="확인"))
+    // 4. "회원이 업데이트되었습니다" 모달 대기 (유일한 성공 조건)
     try {
+        let elapsed = 0;
+        let successFound = false;
+        while(elapsed < 6000) { // 최대 6초 대기
+            let walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            let n;
+            while(n = walk.nextNode()) {
+                if (n.textContent.includes('회원이 업데이트되었습니다')) {
+                    let parent = n.parentElement;
+                    if (parent && parent.getBoundingClientRect().height > 0) {
+                        successFound = true;
+                        break;
+                    }
+                }
+            }
+            if (successFound) break;
+            await wait(500);
+            elapsed += 500;
+        }
+
+        if (!successFound) {
+            throw new Error("성공 팝업(회원이 업데이트되었습니다)을 찾지 못했습니다.");
+        }
+
         let okBtn = await waitForButton("확인", 3000);
         okBtn.click();
-        await wait(1000);
+        await wait(500);
     } catch(e) {
-        // 확인 버튼이 안 뜨는 경우 무시
+        let errText = e.message;
+        // 다른 스낵바나 에러 팝업의 텍스트가 있다면 캡처
+        let alertNode = document.querySelector('[role="alert"], .m2-snackbar');
+        if (alertNode && alertNode.innerText) {
+            errText = alertNode.innerText.trim();
+        }
+        throw new Error(errText);
     }
     
   } catch(e) {

@@ -21,3 +21,5 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+gpt_manager/config.json

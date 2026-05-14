@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPT 계정 추가 / 리셋 자동화</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <img src="/static/img/logo.png" alt="에이블런 로고">
+      <div>
+        <h1>GPT 자동화</h1>
+        <div class="subtitle">계정 추가 / 리셋</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="reset" onclick="navigateTo('reset')">
+        <span class="nav-icon">🔄</span>
+        <span>계정 초기화</span>
+      </button>
+      <button class="nav-item" data-page="members" onclick="navigateTo('members')">
+        <span class="nav-icon">👥</span>
+        <span>멤버 추가</span>
+      </button>
+      <button class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+        <span class="nav-icon">⚙️</span>
+        <span>설정</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      v1.0 · 에이블런<br>
+      <span style="font-size:11px; color:var(--text-secondary);">개발자: 피터(국필호)<br>문의: peter@ablearn.kr</span>
+    </div>
+  </aside>
+
+  <!-- ===== Main Content ===== -->
+  <main class="main">
+
+    <!-- ===== 계정 초기화 페이지 ===== -->
+    <section id="page-reset" class="page active">
+      <div class="page-header">
+        <h2>GPT 계정 초기화</h2>
+        <p>GPT 계정의 채팅 기록, 라이브러리, 프로젝트를 삭제하고 모든 기기에서 로그아웃합니다.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">작업 설정</div>
+        <div class="form-group">
+          <label class="form-label">계정 범위</label>
+          <input type="text" id="reset-range" class="form-input" placeholder="예: 1~10, 12, 15~17">
+          <div class="form-hint">gpt1@ablearn.kr ~ gpt30@ablearn.kr 중 초기화할 번호를 입력하세요.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">동시 처리 수: <span id="workers-value">2</span>개</label>
+          <div class="slider-container">
+            <input type="range" id="reset-workers" min="1" max="3" value="2" oninput="document.getElementById('workers-value').textContent=this.value">
+            <span class="slider-value" id="workers-display">2</span>
+          </div>
+          <div class="form-hint">동시에 처리할 계정 수 (최대 3개). 높을수록 빠르지만 PC 부하가 커집니다.</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary btn-lg" id="btn-start-reset" onclick="startReset()">
+            ▶ 초기화 시작
+          </button>
+          <button class="btn btn-danger" id="btn-stop-reset" onclick="stopTask()" style="display:none;">
+            ■ 중지
+          </button>
+        </div>
+      </div>
+
+      <!-- 로그 뷰어 -->
+      <div class="card" id="reset-log-card" style="display:none;">
+        <div class="card-title">
+          실시간 로그
+          <span class="status-badge running" id="reset-status-badge">진행 중</span>
+        </div>
+        <div class="log-viewer" id="reset-log">
+          <div class="log-empty">작업을 시작하면 로그가 여기에 표시됩니다.</div>
+        </div>
+      </div>
+
+      <!-- 결과 요약 -->
+      <div class="results-bar" id="reset-results">
+        <div class="result-item success" id="reset-ok">✅ 성공: <strong>0</strong>개</div>
+        <div class="result-item fail" id="reset-fail">❌ 실패: <strong>0</strong>개</div>
+        <div class="result-item time" id="reset-time">⏱ 소요: <strong>-</strong></div>
+      </div>
+    </section>
+
+    <!-- ===== 멤버 추가 페이지 ===== -->
+    <section id="page-members" class="page">
+      <div class="page-header">
+        <h2>Google Groups 멤버 추가</h2>
+        <p>엑셀에서 복사한 데이터를 붙여넣어 Google Groups에 멤버를 일괄 등록합니다.</p>
+      </div>
+
+      <div class="alert alert-warning">
+        <span class="alert-icon">⚠️</span>
+        <div>
+          <strong>사전 필수 조건</strong><br>
+          반드시 <strong>회사 계정(ablearn.kr)</strong>의 Google Workspace <strong>관리자 계정</strong>으로
+          Chrome에 로그인된 상태여야 합니다. 일반 계정은 멤버 추가 권한이 없습니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">데이터 입력</div>
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px; line-height:1.6;">
+          아래 표에 <strong>직접 입력</strong>하거나, 엑셀/스프레드시트에서 두 열을 복사한 뒤 표의 아무 셀에 <kbd>⌘</kbd>+<kbd>V</kbd>로 붙여넣으세요.
+        </p>
+
+        <div class="excel-grid-wrapper">
+          <div class="excel-grid-scroll">
+            <table class="excel-grid" id="excelGrid">
+              <colgroup>
+                <col class="col-num">
+                <col class="col-email">
+                <col class="col-gpt">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="corner"></th>
+                  <th>등록할 이메일 (A)</th>
+                  <th>할당할 GPT 계정 (B)</th>
+                </tr>
+              </thead>
+              <tbody id="member-grid">
+                <!-- JS가 초기 행 생성 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tip-box">
+          💡 GPT 계정은 <span class="highlight">gpt10</span> 또는 <span class="highlight">gpt10@ablearn.kr</span> 형태 모두 OK!&nbsp;&nbsp;|&nbsp;&nbsp;빈 행은 자동으로 무시됩니다.
+        </div>
+      </div>
+
+      <div class="btn-group" style="margin-bottom:20px;">
+        <button class="btn btn-secondary" onclick="clearMemberData()">초기화</button>
+        <button class="btn btn-primary btn-lg" id="btn-start-members" onclick="startMembers()">
+          ▶ 순차적 자동 추가 시작
+        </button>
+        <button class="btn btn-danger" id="btn-stop-members" onclick="stopTask()" style="display:none;">
+          ■ 중지
+        </button>
+      </div>
+
+      <!-- 로그인 프롬프트 -->
+      <div class="login-prompt" id="login-prompt">
+        <h3>🔐 Google 로그인 필요</h3>
+        <p>
+          자동으로 열린 브라우저 창에서 <strong>회사 계정(ablearn.kr)</strong>으로 Google에 로그인해주세요.<br>
+          로그인이 완전히 끝난 후(내 계정 홈 화면이 보이면) 아래 버튼을 클릭하세요.
+        </p>
+        <button class="btn btn-success" onclick="confirmLogin()">✅ 로그인 완료</button>
+      </div>
+
+      <!-- 로그 뷰어 -->
+      <div class="card" id="member-log-card" style="display:none;">
+        <div class="card-title">
+          실시간 로그
+          <span class="status-badge running" id="member-status-badge">진행 중</span>
+        </div>
+        <div class="log-viewer" id="member-log">
+          <div class="log-empty">작업을 시작하면 로그가 여기에 표시됩니다.</div>
+        </div>
+      </div>
+
+      <div class="results-bar" id="member-results">
+        <div class="result-item success" id="member-ok">✅ 성공: <strong>0</strong>개</div>
+        <div class="result-item fail" id="member-fail">❌ 실패: <strong>0</strong>개</div>
+      </div>
+    </section>
+
+    <!-- ===== 설정 페이지 ===== -->
+    <section id="page-settings" class="page">
+      <div class="page-header">
+        <h2>설정</h2>
+        <p>GPT 계정 초기화에 필요한 인증 정보를 설정합니다. 설정은 로컬 PC에만 저장됩니다.</p>
+      </div>
+
+      <div class="alert alert-info">
+        <span class="alert-icon">ℹ️</span>
+        <div>이 설정은 <strong>계정 초기화</strong> 기능에만 필요합니다. 멤버 추가 기능은 별도 설정 없이 사용 가능합니다.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">인증 정보</div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label class="form-label">마스터 이메일</label>
+            <input type="email" id="cfg-master-email" class="form-input" placeholder="인증 코드를 수신할 이메일">
+            <div class="form-hint">모든 GPT 계정의 인증 코드가 전달되는 이메일 주소입니다.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">앱 비밀번호</label>
+            <div class="password-wrapper">
+              <input type="password" id="cfg-app-password" class="form-input" placeholder="Gmail 앱 비밀번호 (16자리, 띄어쓰기 없이)">
+              <button class="password-toggle" onclick="togglePassword('cfg-app-password', this)">👁</button>
+            </div>
+            <div class="form-hint">아래 가이드를 참고하여 Gmail 앱 비밀번호를 생성하세요.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">공통 비밀번호</label>
+            <div class="password-wrapper">
+              <input type="password" id="cfg-common-password" class="form-input" placeholder="GPT 계정 공통 비밀번호">
+              <button class="password-toggle" onclick="togglePassword('cfg-common-password', this)">👁</button>
+            </div>
+            <div class="form-hint">gpt1~gpt30 계정에 공통으로 설정된 비밀번호입니다.</div>
+          </div>
+        </div>
+        <div style="margin-top:20px;">
+          <button class="btn btn-primary" onclick="saveSettings()">💾 설정 저장</button>
+        </div>
+        <div id="settings-status" style="margin-top:12px; font-size:13px;"></div>
+      </div>
+
+      <!-- 앱 비밀번호 생성 가이드 -->
+      <div class="card">
+        <div class="card-title">📋 Gmail 앱 비밀번호 생성 가이드</div>
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-content">
+              <strong>2단계 인증 활성화 (이미 되어있다면 건너뛰기)</strong>
+              <p><a href="https://myaccount.google.com/security" target="_blank" style="color:var(--primary);">Google 계정 보안 페이지</a> 접속 → <strong>"2단계 인증"</strong> 클릭 → 안내에 따라 활성화</p>
+              <div class="guide-note">⚠️ 2단계 인증이 켜져 있어야만 앱 비밀번호를 생성할 수 있습니다.</div>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-content">
+              <strong>앱 비밀번호 페이지 접속</strong>
+              <p><a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--primary);">https://myaccount.google.com/apppasswords</a> 접속</p>
+              <div class="guide-note">또는: Google 계정 → 보안 → "Google에 로그인" 섹션 → "앱 비밀번호"</div>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-content">
+              <strong>앱 비밀번호 생성</strong>
+              <p>앱 이름에 <strong>"GPT자동화"</strong> 입력 → <strong>"만들기"</strong> 클릭</p>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">4</div>
+            <div class="guide-step-content">
+              <strong>16자리 비밀번호 복사</strong>
+              <p>화면에 표시된 <strong>16자리 비밀번호</strong>를 복사합니다. (예: <code>abcd efgh ijkl mnop</code>)</p>
+              <div class="guide-note">⚠️ 이 창을 닫으면 다시 볼 수 없습니다! 반드시 복사해주세요.</div>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">5</div>
+            <div class="guide-step-content">
+              <strong>위 "앱 비밀번호" 칸에 입력</strong>
+              <p>복사한 16자리를 <strong>띄어쓰기 없이</strong> 위 입력칸에 붙여넣으세요. (예: <code>abcdefghijklmnop</code>)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== 작업 완료 모달 ===== -->
+  <div class="modal-overlay" id="completion-modal">
+    <div class="modal-content">
+      <div class="modal-icon">🎉</div>
+      <h3 class="modal-title">작업이 모두 완료되었습니다!</h3>
+      <div class="modal-stats">
+        <div>성공: <strong id="modal-success" style="color:var(--success);">0</strong>개</div>
+        <div>실패: <strong id="modal-fail" style="color:var(--error);">0</strong>개</div>
+      </div>
+      <button class="btn btn-primary" onclick="closeModal()" style="width: 100%;">확인</button>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/reset.js"></script>
+  <script src="/static/js/members.js"></script>
+</body>
+</html>

@@ -1,7 +1,12 @@
+# 기존 자동화 스크립트
 playwright==1.43.0
 pandas==2.2.2
 openpyxl==3.1.2
 undetected-chromedriver
 python-dotenv
 setuptools
-dotenv
+
+# GPT 매니저 웹 앱 (gpt_manager/)
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+websockets>=11.0
