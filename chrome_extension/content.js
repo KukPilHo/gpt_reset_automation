@@ -45,6 +45,23 @@ async function waitForButton(name, timeout = 10000) {
   throw new Error(`Timeout waiting for button: ${name}`);
 }
 
+async function clickViaDebugger(el) {
+  let rect = el.getBoundingClientRect();
+  let x = rect.x + (rect.width / 2);
+  let y = rect.y + (rect.height / 2);
+
+  await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      action: "cdpClick",
+      x: x,
+      y: y
+    }, (res) => {
+      if(res && res.success) resolve();
+      else reject(new Error("CDP click failed"));
+    });
+  });
+}
+
 async function runAddMember(email) {
   try {
     // 1. 상단 회원 추가 버튼 클릭 (Codegen: get_by_label("회원 추가"))
@@ -54,8 +71,8 @@ async function runAddMember(email) {
     
     // 2. 그룹 멤버 이메일 입력 (Codegen: get_by_label("그룹 멤버"))
     let input = await waitForElement('input[aria-label="그룹 멤버"]');
-    input.focus();
-    input.click();
+    // 창이 백그라운드일 때 focus()가 무시되는 것을 막기 위해 CDP로 강제 마우스 클릭
+    await clickViaDebugger(input);
     await wait(500);
     
     // 백그라운드(Debugger)를 통해 진짜 키보드로 타이핑 -> 클릭 -> 탭키 누르기 (Codegen 순서 완벽 동일)
@@ -106,11 +123,28 @@ async function runAddMember(email) {
         await wait(500);
     } catch(e) {
         let errText = e.message;
-        // 다른 스낵바나 에러 팝업의 텍스트가 있다면 캡처
-        let alertNode = document.querySelector('[role="alert"], .m2-snackbar');
-        if (alertNode && alertNode.innerText) {
-            errText = alertNode.innerText.trim();
+        
+        // 에러 팝업이나 다이얼로그가 떠있다면 그 텍스트를 모두 긁어오기
+        let dialogs = Array.from(document.querySelectorAll('[role="dialog"], [role="alert"], .m2-snackbar'));
+        for (let d of dialogs) {
+            // 회원 추가 모달창 본문 자체는 제외 (너무 길어짐)
+            if (d.querySelector('input[aria-label="그룹 멤버"]')) continue; 
+            
+            if (d.innerText && d.innerText.trim().length > 0) {
+                // "취소", "확인" 등 버튼 텍스트 제거
+                let text = d.innerText.replace(/취소|확인/g, '').trim();
+                if (text) {
+                    errText = text;
+                    break;
+                }
+            }
         }
+        
+        // 만약 여전히 타임아웃 에러이고, 회원 추가 버튼이 안 눌렸다면?
+        if (errText.includes("Timeout waiting for input") && document.querySelector('input[aria-label="그룹 멤버"]')) {
+           errText = "키보드 타이핑이 입력되지 않아 버튼이 비활성화되었습니다.";
+        }
+
         throw new Error(errText);
     }
     

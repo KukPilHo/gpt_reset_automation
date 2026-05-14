@@ -6,11 +6,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 비동기 응답 대기
   }
   
+  // 범용 CDP 클릭 핸들러 (백그라운드 탭에서 클릭 이벤트를 강제 발생)
+  if (request.action === "cdpClick") {
+    const tabId = sender.tab.id;
+    (async () => {
+      try {
+        if (request.x !== undefined && request.y !== undefined) {
+           await new Promise(r => chrome.debugger.sendCommand({tabId}, "Input.dispatchMouseEvent", {
+               type: "mousePressed", x: request.x, y: request.y, button: "left", clickCount: 1
+           }, r));
+           await new Promise(r => setTimeout(r, 50));
+           await new Promise(r => chrome.debugger.sendCommand({tabId}, "Input.dispatchMouseEvent", {
+               type: "mouseReleased", x: request.x, y: request.y, button: "left", clickCount: 1
+           }, r));
+        }
+        sendResponse({success: true});
+      } catch(e) {
+        console.error("Debugger click error:", e);
+        sendResponse({success: false});
+      }
+    })();
+    return true;
+  }
+  
   // 컨텐츠 스크립트에서 진짜 키보드 입력을 요청했을 때 처리 (Playwright 완벽 모방)
   if (request.action === "typeAndTab") {
     const tabId = sender.tab.id;
     (async () => {
       try {
+        // 크롬 브라우저 정책상 탭이 포커스를 잃으면 키보드 이벤트가 무시될 수 있으므로
+        // 아주 잠깐 해당 탭을 화면 맨 앞으로(활성화) 가져와서 포커스를 강제합니다.
+        await chrome.tabs.update(tabId, { active: true });
+        await new Promise(r => setTimeout(r, 200)); // 활성화 후 0.2초 대기
+
+
         // 1. 진짜 사람처럼 한 글자씩 타이핑
         for(let i=0; i<request.text.length; i++) {
             await new Promise(r => chrome.debugger.sendCommand({tabId}, "Input.dispatchKeyEvent", {
@@ -111,8 +140,16 @@ async function processSingleJob(task, index, total) {
   const url = `https://groups.google.com/a/ablearn.kr/g/${task.gpt}/members`;
   let result = { success: false, error: "알 수 없는 오류" };
 
-  // 탭 생성 (백그라운드에서 열기)
-  const tab = await chrome.tabs.create({ url: url, active: false });
+  // 탭 생성 (새 창/팝업으로 열기)
+  // 구글 보안 정책 우회를 위해 별도의 팝업창으로 열어 포커스를 유지합니다.
+  const win = await chrome.windows.create({ 
+    url: url, 
+    type: 'popup', 
+    width: 800, 
+    height: 600, 
+    focused: true 
+  });
+  const tab = win.tabs[0];
 
   // 탭 로딩 완료 대기
   await new Promise(resolve => {
