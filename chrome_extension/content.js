@@ -1,7 +1,7 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "runAddMember") {
     runAddMember(request.email)
-      .then(() => sendResponse({success: true}))
+      .then((result) => sendResponse(result))
       .catch((e) => sendResponse({success: false, error: e.toString()}));
     return true; // 비동기 응답 처리
   }
@@ -62,8 +62,71 @@ async function clickViaDebugger(el) {
   });
 }
 
+/**
+ * 현재 멤버 목록 페이지에서 해당 이메일이 이미 존재하는지 확인합니다.
+ * 두 가지 방법을 사용하여 신뢰성을 확보:
+ * 1. AF_initDataCallback의 ds:12 데이터에서 이메일 파싱
+ * 2. 페이지 전체 텍스트에서 이메일 검색 (폴백)
+ */
+function checkEmailExists(email) {
+  const emailLower = email.toLowerCase().trim();
+  
+  // 방법 1: ds:12 스크립트 데이터에서 멤버 이메일 목록 추출
+  try {
+    const scripts = document.querySelectorAll('script.ds\\:12, script[class="ds:12"]');
+    for (const script of scripts) {
+      const text = script.textContent || '';
+      // 이메일 패턴 매칭 (JSON 내에서 "email@domain.com" 형태로 존재)
+      const emailRegex = /[\w._%+-]+@[\w.-]+\.[a-zA-Z]{2,}/g;
+      const matches = text.match(emailRegex);
+      if (matches) {
+        for (const match of matches) {
+          if (match.toLowerCase() === emailLower) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('ds:12 파싱 실패, 폴백으로 진행:', e);
+  }
+  
+  // 방법 2: 페이지 전체 HTML에서 이메일 검색
+  // (렌더링된 텍스트와 스크립트 데이터 모두 포함)
+  try {
+    const bodyHTML = document.body.innerHTML;
+    // 정확한 이메일 매칭을 위해 이메일 앞뒤에 구분자가 있는지 확인
+    // JSON 데이터에서는 "email@domain" 형태로 있음
+    if (bodyHTML.toLowerCase().includes('"' + emailLower + '"') ||
+        bodyHTML.toLowerCase().includes('>' + emailLower + '<') ||
+        bodyHTML.toLowerCase().includes(',' + emailLower + ',')) {
+      return true;
+    }
+  } catch(e) {
+    console.warn('HTML 텍스트 검색 실패:', e);
+  }
+
+  // 방법 3: 렌더링된 innerText에서 이메일 검색 (최종 폴백)
+  try {
+    const bodyText = document.body.innerText;
+    if (bodyText.toLowerCase().includes(emailLower)) {
+      return true;
+    }
+  } catch(e) {
+    console.warn('innerText 검색 실패:', e);
+  }
+  
+  return false;
+}
+
 async function runAddMember(email) {
   try {
+    // ★ 사전 체크: 추가하려는 이메일이 이미 멤버 목록에 있는지 확인
+    if (checkEmailExists(email)) {
+      console.log(`[중복 감지] ${email}은(는) 이미 그룹에 존재합니다.`);
+      return { success: true, alreadyExists: true };
+    }
+
     // 1. 상단 회원 추가 버튼 클릭 (Codegen: get_by_label("회원 추가"))
     let addBtn = await waitForElement('[aria-label="회원 추가"]');
     addBtn.click();
@@ -121,6 +184,7 @@ async function runAddMember(email) {
         let okBtn = await waitForButton("확인", 3000);
         okBtn.click();
         await wait(500);
+        return { success: true, alreadyExists: false };
     } catch(e) {
         let errText = e.message;
         
@@ -143,6 +207,15 @@ async function runAddMember(email) {
         // 만약 여전히 타임아웃 에러이고, 회원 추가 버튼이 안 눌렸다면?
         if (errText.includes("Timeout waiting for input") && document.querySelector('input[aria-label="그룹 멤버"]')) {
            errText = "키보드 타이핑이 입력되지 않아 버튼이 비활성화되었습니다.";
+        }
+
+        // ★ 에러 발생 후 사후 체크: 에러가 났지만 실제로는 추가가 완료된 경우
+        // 페이지를 새로고침하여 최신 멤버 목록을 확인할 수도 있지만,
+        // 현재 페이지의 데이터에서도 확인 가능 (구글이 DOM을 업데이트할 수 있음)
+        // 일단 현재 DOM 상태에서 체크
+        if (checkEmailExists(email)) {
+          console.log(`[사후 확인] ${email}이(가) 에러 후에도 멤버 목록에 존재합니다 → 성공 처리`);
+          return { success: true, alreadyExists: true };
         }
 
         throw new Error(errText);

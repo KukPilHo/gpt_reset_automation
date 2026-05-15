@@ -113,7 +113,11 @@ async function processJobs(tasks) {
         activeCount++;
         
         processSingleJob(task, i, tasks.length).then((result) => {
-          if (result.success) {
+          if (result.success && result.alreadyExists) {
+            successCount++;
+            chrome.runtime.sendMessage({ action: "logResult", text: `🔵 이미 추가됨: ${task.email}` });
+            jobResults.push({ email: task.email, gpt: task.gpt, status: 'ALREADY_EXISTS' });
+          } else if (result.success) {
             successCount++;
             chrome.runtime.sendMessage({ action: "logResult", text: `✅ 성공: ${task.email}` });
             jobResults.push({ email: task.email, gpt: task.gpt, status: 'OK' });
@@ -178,7 +182,7 @@ async function processSingleJob(task, index, total) {
       });
     });
     if (res && res.success) {
-      result = { success: true };
+      result = { success: true, alreadyExists: !!res.alreadyExists };
     } else if (res && res.error) {
       result = { success: false, error: res.error };
     } else {

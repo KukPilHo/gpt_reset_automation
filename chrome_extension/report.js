@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const { elapsedTime, successCount, failCount, jobResults } = data.gptAutoResults;
 
+    // "이미 추가됨" 카운트 계산
+    const alreadyExistsCount = jobResults.filter(job => job.status === 'ALREADY_EXISTS').length;
+    const newAddedCount = successCount - alreadyExistsCount;
+
     // 요약 카드 업데이트
     const minutes = Math.floor(elapsedTime / 60);
     const seconds = elapsedTime % 60;
@@ -15,6 +19,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('elapsedTime').textContent = timeStr;
     document.getElementById('successCount').textContent = `${successCount}건`;
     document.getElementById('failCount').textContent = `${failCount}건`;
+    
+    // "이미 추가됨" 카드 업데이트
+    const alreadyExistsEl = document.getElementById('alreadyExistsCount');
+    if (alreadyExistsEl) {
+      alreadyExistsEl.textContent = `${alreadyExistsCount}건`;
+    }
 
     const failTable = document.getElementById('failTable');
     const failTableBody = document.getElementById('failTableBody');
@@ -42,12 +52,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // 전체 리스트
     jobResults.forEach(job => {
       const tr = document.createElement('tr');
-      const isSuccess = job.status === 'OK';
+      let badgeClass, badgeText, reasonText;
+      
+      if (job.status === 'OK') {
+        badgeClass = 'success';
+        badgeText = '성공';
+        reasonText = '-';
+      } else if (job.status === 'ALREADY_EXISTS') {
+        badgeClass = 'already';
+        badgeText = '이미 추가됨';
+        reasonText = '그룹에 이미 존재하는 멤버';
+      } else {
+        badgeClass = 'fail';
+        badgeText = '실패';
+        reasonText = job.reason || '알 수 없는 오류';
+      }
+      
       tr.innerHTML = `
-        <td><span class="badge ${isSuccess ? 'success' : 'fail'}">${isSuccess ? '성공' : '실패'}</span></td>
+        <td><span class="badge ${badgeClass}">${badgeText}</span></td>
         <td>${job.email}</td>
         <td>${job.gpt}</td>
-        <td><span style="font-size:12px; color:#5f6368;">${job.reason || '-'}</span></td>
+        <td><span style="font-size:12px; color:#5f6368;">${reasonText}</span></td>
       `;
       allTableBody.appendChild(tr);
     });
