@@ -127,7 +127,7 @@ async def handle_reset(websocket: WebSocket, data: dict):
         await websocket.send_json({"type": "error", "msg": "유효한 계정 번호가 없습니다."})
         return
 
-    max_workers = min(int(data.get("max_workers", config.get("max_workers", 2))), 3)
+    max_workers = min(int(data.get("max_workers", config.get("max_workers", 2))), 2)
 
     is_running = True
     stop_event = threading.Event()

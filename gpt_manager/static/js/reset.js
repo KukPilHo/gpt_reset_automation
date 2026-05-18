@@ -2,6 +2,13 @@
  * 계정 초기화 탭 로직
  */
 
+function setWorkers(value) {
+  document.getElementById('reset-workers').value = value;
+  document.querySelectorAll('.workers-toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.value) === value);
+  });
+}
+
 function startReset() {
   const rangeInput = document.getElementById('reset-range').value.trim();
   if (!rangeInput) {

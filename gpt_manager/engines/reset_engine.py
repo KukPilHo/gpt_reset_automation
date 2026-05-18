@@ -205,103 +205,120 @@ def process_account(num, config, log_callback, stop_event=None):
             else:
                 log(tag, "ℹ️ '모두 삭제' 버튼 없음 (이미 비어있음)")
 
-            # --- (A) 라이브러리 삭제 ---
-            driver.get("https://chatgpt.com/library")
-            time.sleep(5)
+            # --- (A) 라이브러리 삭제 (2회 체크) ---
+            log(tag, "➡️ 라이브러리 삭제 시작")
 
-            # 전략1: 헤더 bridge button으로 모두 선택
-            bulk_selected = False
-            driver.execute_script("""
-                const header = document.querySelector('[data-page-table-list-header]');
-                if (header) {
-                    const bridgeBtn = header.querySelector('button');
-                    if (bridgeBtn) {
-                        const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-                        events.forEach(type => {
-                            bridgeBtn.dispatchEvent(new PointerEvent(type, {
-                                bubbles: true, cancelable: true, view: window,
-                                pointerId: 1, pointerType: 'mouse'
-                            }));
-                        });
+            for lib_round in range(2):
+                if lib_round > 0:
+                    log(tag, "🔄 라이브러리 삭제 재확인 중...")
+
+                driver.get("https://chatgpt.com/library")
+                time.sleep(5)
+
+                # 전략1: 헤더 bridge button으로 모두 선택
+                bulk_selected = False
+                driver.execute_script("""
+                    const header = document.querySelector('[data-page-table-list-header]');
+                    if (header) {
+                        const bridgeBtn = header.querySelector('button');
+                        if (bridgeBtn) {
+                            const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                            events.forEach(type => {
+                                bridgeBtn.dispatchEvent(new PointerEvent(type, {
+                                    bubbles: true, cancelable: true, view: window,
+                                    pointerId: 1, pointerType: 'mouse'
+                                }));
+                            });
+                        }
                     }
-                }
-            """)
-            time.sleep(2)
-
-            checked_count = driver.execute_script(
-                "return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;"
-            )
-            if checked_count > 0:
-                bulk_selected = True
-                log(tag, f"➡️ 모두 선택 — {checked_count}개")
-
-            # 전략2: 개별 bridge buttons
-            if not bulk_selected:
-                clicked = driver.execute_script("""
-                    const bridges = document.querySelectorAll('button[data-testid^="artifact-checkbox-bridge-"]');
-                    let c = 0;
-                    bridges.forEach(btn => {
-                        ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type => {
-                            btn.dispatchEvent(new PointerEvent(type, {bubbles:true,cancelable:true,view:window,pointerId:1,pointerType:'mouse'}));
-                        });
-                        c++;
-                    });
-                    return c;
                 """)
                 time.sleep(2)
-                checked_count = driver.execute_script("return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;")
+
+                checked_count = driver.execute_script(
+                    "return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;"
+                )
                 if checked_count > 0:
                     bulk_selected = True
-                    log(tag, f"➡️ 개별 선택 — {checked_count}개")
+                    log(tag, f"➡️ 모두 선택 — {checked_count}개")
 
-            if bulk_selected:
-                bulk_del = driver.find_elements(By.XPATH, "//button[contains(., '삭제')]")
-                if bulk_del:
-                    driver.execute_script("arguments[0].click();", bulk_del[0])
+                # 전략2: 개별 bridge buttons
+                if not bulk_selected:
+                    clicked = driver.execute_script("""
+                        const bridges = document.querySelectorAll('button[data-testid^="artifact-checkbox-bridge-"]');
+                        let c = 0;
+                        bridges.forEach(btn => {
+                            ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type => {
+                                btn.dispatchEvent(new PointerEvent(type, {bubbles:true,cancelable:true,view:window,pointerId:1,pointerType:'mouse'}));
+                            });
+                            c++;
+                        });
+                        return c;
+                    """)
                     time.sleep(2)
-                    confirm_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-recall-file-button']")
-                    if not confirm_btns:
-                        confirm_btns = driver.find_elements(By.CSS_SELECTOR, "button.btn-danger")
-                    if not confirm_btns:
-                        confirm_btns = driver.find_elements(By.XPATH, "//button[.//div[text()='삭제']]")
-                    if confirm_btns:
-                        driver.execute_script("arguments[0].click();", confirm_btns[-1])
-                        time.sleep(3)
-                        log(tag, "✅ 라이브러리 일괄 삭제 완료")
-            else:
-                log(tag, "ℹ️ 라이브러리 일괄 선택 실패 — 개별 삭제 시도")
+                    checked_count = driver.execute_script("return document.querySelectorAll('input[type=\"checkbox\"]:checked').length;")
+                    if checked_count > 0:
+                        bulk_selected = True
+                        log(tag, f"➡️ 개별 선택 — {checked_count}개")
 
-            # 개별 삭제 폴백
-            lib_count = 0
-            for _ in range(100):
-                time.sleep(1)
-                action_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-page-table-row-actions-focus-target]")
-                if not action_btns:
-                    log(tag, f"📂 라이브러리 {lib_count}개 삭제 완료")
-                    break
-                driver.execute_script("arguments[0].click();", action_btns[0])
-                time.sleep(1)
-                del_menu = driver.find_elements(By.XPATH, "//div[@role='menuitem' and contains(., '삭제')]")
-                if not del_menu:
-                    del_menu = driver.find_elements(By.XPATH, "//*[@role='menu']//*[contains(text(), '삭제')]")
-                if del_menu:
-                    driver.execute_script("arguments[0].click();", del_menu[0])
-                    time.sleep(2)
-                    cfm = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-recall-file-button']")
-                    if not cfm:
-                        cfm = driver.find_elements(By.XPATH, "//button[contains(@class, 'btn-danger') and contains(., '삭제')]")
-                    if not cfm:
-                        cfm = driver.find_elements(By.XPATH, "//button[.//div[text()='삭제']]")
-                    if cfm:
-                        driver.execute_script("arguments[0].click();", cfm[-1])
+                if bulk_selected:
+                    bulk_del = driver.find_elements(By.XPATH, "//button[contains(., '삭제')]")
+                    if bulk_del:
+                        driver.execute_script("arguments[0].click();", bulk_del[0])
                         time.sleep(2)
-                        lib_count += 1
+                        confirm_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-recall-file-button']")
+                        if not confirm_btns:
+                            confirm_btns = driver.find_elements(By.CSS_SELECTOR, "button.btn-danger")
+                        if not confirm_btns:
+                            confirm_btns = driver.find_elements(By.XPATH, "//button[.//div[text()='삭제']]")
+                        if confirm_btns:
+                            driver.execute_script("arguments[0].click();", confirm_btns[-1])
+                            time.sleep(3)
+                            log(tag, f"  ↳ {lib_round + 1}차: 일괄 삭제 완료")
+                else:
+                    if lib_round == 0:
+                        log(tag, "ℹ️ 라이브러리 일괄 선택 실패 — 개별 삭제 시도")
+
+                # 개별 삭제 폴백
+                lib_count = 0
+                for _ in range(100):
+                    time.sleep(1)
+                    action_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-page-table-row-actions-focus-target]")
+                    if not action_btns:
+                        break
+                    driver.execute_script("arguments[0].click();", action_btns[0])
+                    time.sleep(1)
+                    del_menu = driver.find_elements(By.XPATH, "//div[@role='menuitem' and contains(., '삭제')]")
+                    if not del_menu:
+                        del_menu = driver.find_elements(By.XPATH, "//*[@role='menu']//*[contains(text(), '삭제')]")
+                    if del_menu:
+                        driver.execute_script("arguments[0].click();", del_menu[0])
+                        time.sleep(2)
+                        cfm = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-recall-file-button']")
+                        if not cfm:
+                            cfm = driver.find_elements(By.XPATH, "//button[contains(@class, 'btn-danger') and contains(., '삭제')]")
+                        if not cfm:
+                            cfm = driver.find_elements(By.XPATH, "//button[.//div[text()='삭제']]")
+                        if cfm:
+                            driver.execute_script("arguments[0].click();", cfm[-1])
+                            time.sleep(2)
+                            lib_count += 1
+                        else:
+                            driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                            break
                     else:
                         driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
                         break
-                else:
-                    driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+
+                log(tag, f"  ↳ {lib_round + 1}차: {lib_count}개 개별 삭제")
+
+                # 남은 항목이 없으면 조기 종료
+                remaining = driver.execute_script(
+                    "return document.querySelectorAll('button[data-page-table-row-actions-focus-target]').length;"
+                )
+                if remaining == 0:
                     break
+
+            log(tag, "✅ 라이브러리 삭제 완료")
 
             # --- (B-0) GPT 사이드바에서 숨기기 ---
             log(tag, "➡️ GPT 사이드바에서 숨기기")
@@ -346,12 +363,13 @@ def process_account(num, config, log_callback, stop_event=None):
 
             log(tag, f"✅ GPT 사이드바 숨기기 완료 ({gpt_hidden_count}개)")
 
-            # --- (B) 프로젝트 삭제 (2회 체크) ---
+            # --- (B) 프로젝트 삭제 (3회 체크) ---
             log(tag, "➡️ 프로젝트 삭제 시작")
 
-            for check_round in range(2):
+            for check_round in range(3):
                 if check_round > 0:
                     log(tag, "🔄 프로젝트 삭제 재확인 중...")
+                    time.sleep(3)
                     driver.get("https://chatgpt.com")
                     time.sleep(4)
 

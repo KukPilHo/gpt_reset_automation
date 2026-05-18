@@ -260,43 +260,49 @@ body {
   color: var(--text-muted);
 }
 
-/* Slider */
-.slider-container {
+/* Workers Toggle */
+.workers-toggle {
+  display: inline-flex;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid var(--border);
+}
+
+.workers-toggle-btn {
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-
-.slider-container input[type="range"] {
-  flex: 1;
-  -webkit-appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--border);
-  outline: none;
-}
-
-.slider-container input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--primary);
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 28px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-xs);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: transparent;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(74, 58, 255, 0.3);
   transition: var(--transition);
+  user-select: none;
 }
 
-.slider-container input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+.workers-toggle-btn:hover {
+  background: var(--card);
+  color: var(--text);
 }
 
-.slider-value {
+.workers-toggle-btn.active {
+  background: var(--card);
+  color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(74, 58, 255, 0.15);
+}
+
+.workers-toggle-num {
   font-size: 16px;
   font-weight: 700;
-  color: var(--primary);
-  min-width: 30px;
-  text-align: center;
 }
 
 /* ===== Buttons ===== */

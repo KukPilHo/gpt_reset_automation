@@ -55,12 +55,17 @@
           <div class="form-hint">gpt1@ablearn.kr ~ gpt30@ablearn.kr 중 초기화할 번호를 입력하세요.</div>
         </div>
         <div class="form-group">
-          <label class="form-label">동시 처리 수: <span id="workers-value">2</span>개</label>
-          <div class="slider-container">
-            <input type="range" id="reset-workers" min="1" max="3" value="2" oninput="document.getElementById('workers-value').textContent=this.value">
-            <span class="slider-value" id="workers-display">2</span>
+          <label class="form-label">동시 처리 수</label>
+          <input type="hidden" id="reset-workers" value="2">
+          <div class="workers-toggle">
+            <button type="button" class="workers-toggle-btn" data-value="1" onclick="setWorkers(1)">
+              <span class="workers-toggle-num">1</span>개
+            </button>
+            <button type="button" class="workers-toggle-btn active" data-value="2" onclick="setWorkers(2)">
+              <span class="workers-toggle-num">2</span>개
+            </button>
           </div>
-          <div class="form-hint">동시에 처리할 계정 수 (최대 3개). 높을수록 빠르지만 PC 부하가 커집니다.</div>
+          <div class="form-hint">동시에 처리할 계정 수. 2개는 빠르지만 PC 부하가 커집니다.</div>
         </div>
         <div class="btn-group">
           <button class="btn btn-primary btn-lg" id="btn-start-reset" onclick="startReset()">
