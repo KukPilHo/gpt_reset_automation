@@ -17,6 +17,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const timeStr = minutes > 0 ? `${minutes}분 ${seconds}초` : `${seconds}초`;
     
     document.getElementById('elapsedTime').textContent = timeStr;
+    const origTotal = data.gptAutoResults.originalTotal || data.gptAutoResults.tasksTotal;
+    const tasksTotalEl = document.getElementById('tasksTotal');
+    if (tasksTotalEl) {
+      tasksTotalEl.textContent = `${origTotal}건`;
+    }
     document.getElementById('successCount').textContent = `${successCount}건`;
     document.getElementById('failCount').textContent = `${failCount}건`;
     
@@ -82,15 +87,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (failedJobs.length > 0) {
       retryBtn.style.display = 'inline-block';
       retryBtn.textContent = `❌ 실패 항목 ${failedJobs.length}건 재시도`;
-      
+
       retryBtn.addEventListener('click', () => {
-        // 백그라운드 스크립트가 처리할 수 있는 형식 {email, gpt}으로 변환
         const retryTasks = failedJobs.map(job => ({ email: job.email, gpt: job.gpt }));
-        
+        const successfulResults = jobResults.filter(job => job.status !== 'FAIL');
+        const origTotal = data.gptAutoResults.originalTotal || data.gptAutoResults.tasksTotal;
+
         retryBtn.disabled = true;
         retryBtn.textContent = '재시도 시작 중...';
-        
-        chrome.runtime.sendMessage({ action: "startJobs", tasks: retryTasks }, (response) => {
+
+        chrome.runtime.sendMessage({
+          action: "startJobs",
+          tasks: retryTasks,
+          originalTotal: origTotal,
+          previousResults: successfulResults
+        }, (response) => {
           alert('재시도를 백그라운드에서 시작했습니다!\n창을 닫으셔도 되며, 작업이 끝나면 새로운 리포트가 뜹니다.');
           window.close();
         });

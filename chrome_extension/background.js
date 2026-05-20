@@ -1,6 +1,8 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "startJobs") {
-    processJobs(request.tasks).then((results) => {
+    const originalTotal = request.originalTotal || request.tasks.length;
+    const previousResults = request.previousResults || [];
+    processJobsWithAutoRetry(request.tasks, originalTotal, previousResults).then((results) => {
       sendResponse({ status: "done", results: results });
     });
     return true; // 비동기 응답 대기
@@ -67,74 +69,120 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function processJobs(tasks) {
+async function processJobsWithAutoRetry(tasks, originalTotal, previousResults) {
+  const overallStartTime = Date.now();
+  let accumulatedResults = [...previousResults];
+  let currentTasks = tasks;
+  let prevFailCount = Infinity;
+  let retryRound = 0;
+
+  while (true) {
+    retryRound++;
+
+    if (retryRound > 1) {
+      chrome.runtime.sendMessage({
+        action: "logResult",
+        text: `🔄 자동 재시도 ${retryRound - 1}회차 시작 (실패 ${currentTasks.length}건)`
+      });
+      // 재시도 전 잠시 대기
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    const previousSuccessCount = accumulatedResults.length;
+    const roundResults = await processJobsRound(currentTasks, retryRound, previousSuccessCount, originalTotal);
+
+    const roundSuccesses = roundResults.filter(j => j.status !== 'FAIL');
+    const roundFailures = roundResults.filter(j => j.status === 'FAIL');
+
+    accumulatedResults = accumulatedResults.concat(roundSuccesses);
+
+    const currentFailCount = roundFailures.length;
+
+    if (currentFailCount === 0) {
+      // 모든 항목 성공
+      break;
+    }
+
+    if (currentFailCount >= prevFailCount) {
+      // 실패 개수가 줄지 않음 - 재시도 중단
+      accumulatedResults = accumulatedResults.concat(roundFailures);
+      break;
+    }
+
+    // 실패 개수 감소 - 다시 시도
+    prevFailCount = currentFailCount;
+    currentTasks = roundFailures.map(j => ({ email: j.email, gpt: j.gpt }));
+  }
+
+  const totalElapsed = Math.round((Date.now() - overallStartTime) / 1000);
+  const finalSuccessCount = accumulatedResults.filter(j => j.status !== 'FAIL').length;
+  const finalFailCount = accumulatedResults.filter(j => j.status === 'FAIL').length;
+
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon.png',
+    title: 'GPT 자동화 완료',
+    message: `작업 완료 - 성공: ${finalSuccessCount}건, 실패: ${finalFailCount}건`
+  });
+
+  chrome.storage.local.set({
+    gptAutoResults: {
+      tasksTotal: originalTotal,
+      originalTotal: originalTotal,
+      successCount: finalSuccessCount,
+      failCount: finalFailCount,
+      elapsedTime: totalElapsed,
+      jobResults: accumulatedResults
+    }
+  }, () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("report.html") });
+  });
+
+  return { successCount: finalSuccessCount, failCount: finalFailCount };
+}
+
+async function processJobsRound(tasks, retryRound, previousSuccessCount, originalTotal) {
   const MAX_CONCURRENT = 3;
   let activeCount = 0;
   let currentIndex = 0;
   let completedCount = 0;
-  let successCount = 0;
-  let failCount = 0;
-  
-  const startTime = Date.now();
   const jobResults = [];
-  
+
+  const prefix = retryRound > 1 ? `[재시도 ${retryRound - 1}회차] ` : '';
+
   return new Promise((resolve) => {
     async function runNext() {
       if (currentIndex >= tasks.length && activeCount === 0) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon.png',
-          title: 'GPT 자동화 완료',
-          message: `작업 완료 - 성공: ${successCount}건, 실패: ${failCount}건`
-        });
-        
-        const elapsedTime = Math.round((Date.now() - startTime) / 1000);
-        
-        // 결과 저장 및 리포트 탭 열기
-        chrome.storage.local.set({
-          gptAutoResults: {
-            tasksTotal: tasks.length,
-            successCount,
-            failCount,
-            elapsedTime,
-            jobResults
-          }
-        }, () => {
-          chrome.tabs.create({ url: chrome.runtime.getURL("report.html") });
-        });
-        
-        resolve({ successCount, failCount });
+        resolve(jobResults);
         return;
       }
-      
+
       while (activeCount < MAX_CONCURRENT && currentIndex < tasks.length) {
         const i = currentIndex++;
         const task = tasks[i];
         activeCount++;
-        
+
         processSingleJob(task, i, tasks.length).then((result) => {
           if (result.success && result.alreadyExists) {
-            successCount++;
-            chrome.runtime.sendMessage({ action: "logResult", text: `🔵 이미 추가됨: ${task.email}` });
+            chrome.runtime.sendMessage({ action: "logResult", text: `${prefix}🔵 이미 추가됨: ${task.email}` });
             jobResults.push({ email: task.email, gpt: task.gpt, status: 'ALREADY_EXISTS' });
           } else if (result.success) {
-            successCount++;
-            chrome.runtime.sendMessage({ action: "logResult", text: `✅ 성공: ${task.email}` });
+            chrome.runtime.sendMessage({ action: "logResult", text: `${prefix}✅ 성공: ${task.email}` });
             jobResults.push({ email: task.email, gpt: task.gpt, status: 'OK' });
           } else {
-            failCount++;
-            chrome.runtime.sendMessage({ action: "logResult", text: `❌ 실패: ${task.email}` });
+            chrome.runtime.sendMessage({ action: "logResult", text: `${prefix}❌ 실패: ${task.email}` });
             jobResults.push({ email: task.email, gpt: task.gpt, status: 'FAIL', reason: result.error });
           }
         }).finally(() => {
           activeCount--;
           completedCount++;
-          chrome.runtime.sendMessage({ action: "updateStatus", text: `진행도: ${completedCount}/${tasks.length} 완료 (동시 처리 중...)` });
+          const overallCompleted = previousSuccessCount + completedCount;
+          chrome.runtime.sendMessage({ action: "updateStatus", text: `${prefix}진행도: ${overallCompleted}/${originalTotal} 완료 (동시 처리 중...)` });
           runNext();
         });
       }
     }
-    
+
     // 처음 실행
     runNext();
   });

@@ -31,7 +31,11 @@ async def run_add_members_async(tasks, log_callback, login_event=None, stop_even
     results = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        try:
+            browser = await p.chromium.launch(headless=False, channel="chrome")
+        except Exception as e:
+            log(f"❌ 크롬 브라우저를 찾을 수 없습니다. 구글 크롬이 설치되어 있는지 확인해주세요. ({e})")
+            return [{"status": "FAIL", "reason": "크롬 미설치"}]
         context = await browser.new_context()
         
         # 메인 탭 생성

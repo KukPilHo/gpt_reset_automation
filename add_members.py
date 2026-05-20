@@ -21,7 +21,11 @@ def main():
 
     with sync_playwright() as p:
         # 브라우저 실행 (headless=False 로 설정하여 봇이 아닌 일반 브라우저처럼 띄움)
-        browser = p.chromium.launch(headless=False)
+        try:
+            browser = p.chromium.launch(headless=False, channel="chrome")
+        except Exception as e:
+            print(f"❌ 크롬 브라우저를 찾을 수 없습니다. 구글 크롬이 설치되어 있는지 확인해주세요. ({e})")
+            sys.exit(1)
         context = browser.new_context()
         page = context.new_page()
 

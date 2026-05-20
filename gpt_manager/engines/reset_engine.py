@@ -178,32 +178,40 @@ def process_account(num, config, log_callback, stop_event=None):
             # ===== 2. 초기화 작업 =====
             log(tag, "⚙️ 초기화 작업 시작...")
 
-            # --- (C) 채팅 기록 모두 삭제 ---
+            # --- (C) 채팅 기록 모두 삭제 (2회 체크) ---
             log(tag, "➡️ 데이터 제어 > 모두 삭제")
-            driver.get("https://chatgpt.com/#settings/DataControls")
-            time.sleep(4)
 
-            delete_all_btn = driver.find_elements(
-                By.XPATH, "//button[.//div[text()='모두 삭제'] or contains(., '모두 삭제')]"
-            )
-            if delete_all_btn:
-                driver.execute_script("arguments[0].click();", delete_all_btn[0])
-                time.sleep(3)
+            for chat_round in range(2):
+                if chat_round > 0:
+                    log(tag, "🔄 채팅 기록 삭제 재확인 중...")
 
-                time.sleep(2)
-                confirm = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-all-chats-button']")
-                if not confirm:
-                    confirm = driver.find_elements(By.CSS_SELECTOR, "button.btn-danger")
-                if not confirm:
-                    confirm = driver.find_elements(By.XPATH, "//button[contains(., '삭제 확인')]")
-                if confirm:
-                    driver.execute_script("arguments[0].click();", confirm[0])
+                driver.get("https://chatgpt.com/#settings/DataControls")
+                time.sleep(4)
+
+                delete_all_btn = driver.find_elements(
+                    By.XPATH, "//button[.//div[text()='모두 삭제'] or contains(., '모두 삭제')]"
+                )
+                if delete_all_btn:
+                    driver.execute_script("arguments[0].click();", delete_all_btn[0])
                     time.sleep(3)
-                    log(tag, "✅ 채팅 기록 삭제 완료")
+
+                    time.sleep(2)
+                    confirm = driver.find_elements(By.CSS_SELECTOR, "button[data-testid='confirm-delete-all-chats-button']")
+                    if not confirm:
+                        confirm = driver.find_elements(By.CSS_SELECTOR, "button.btn-danger")
+                    if not confirm:
+                        confirm = driver.find_elements(By.XPATH, "//button[contains(., '삭제 확인')]")
+                    if confirm:
+                        driver.execute_script("arguments[0].click();", confirm[0])
+                        time.sleep(3)
+                        log(tag, f"  ↳ {chat_round + 1}차: 채팅 기록 삭제 완료")
+                    else:
+                        log(tag, "⚠️ 삭제 확인 버튼 못 찾음")
                 else:
-                    log(tag, "⚠️ 삭제 확인 버튼 못 찾음")
-            else:
-                log(tag, "ℹ️ '모두 삭제' 버튼 없음 (이미 비어있음)")
+                    log(tag, "ℹ️ '모두 삭제' 버튼 없음 (이미 비어있음)")
+                    break
+
+            log(tag, "✅ 채팅 기록 삭제 완료")
 
             # --- (A) 라이브러리 삭제 (2회 체크) ---
             log(tag, "➡️ 라이브러리 삭제 시작")
