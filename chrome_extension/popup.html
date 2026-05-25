@@ -202,6 +202,22 @@
       box-shadow: none; 
       cursor: not-allowed; 
     }
+    .btn-stop { 
+      background-color: #ea4335; 
+      color: white; 
+      margin-left: 10px; 
+      flex-grow: 1; 
+      box-shadow: 0 2px 4px rgba(234,67,53,0.25); 
+    }
+    .btn-stop:hover { 
+      background-color: #c5221f; 
+      box-shadow: 0 4px 8px rgba(234,67,53,0.3);
+    }
+    .btn-stop:disabled { 
+      background-color: #bdc1c6; 
+      box-shadow: none; 
+      cursor: not-allowed; 
+    }
     #status { 
       margin-top: 12px; 
       font-size: 12px; 
@@ -253,6 +269,7 @@
     <div class="actions">
       <button class="btn btn-clear" id="clearBtn">초기화</button>
       <button class="btn btn-start" id="startBtn">▶ 순차적 자동 추가 시작</button>
+      <button class="btn btn-stop" id="stopBtn" style="display: none;">■ 작업 중단</button>
     </div>
     <div id="status"></div>
     <div id="logArea" style="margin-top:8px; font-size:11px; text-align:left; color:#555; max-height:100px; overflow-y:auto;"></div>

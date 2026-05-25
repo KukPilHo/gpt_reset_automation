@@ -1,6 +1,7 @@
 const gridBody = document.getElementById('gridBody');
 const startBtn = document.getElementById('startBtn');
 const clearBtn = document.getElementById('clearBtn');
+const stopBtn = document.getElementById('stopBtn');
 const statusDiv = document.getElementById('status');
 const logArea = document.getElementById('logArea');
 
@@ -169,14 +170,47 @@ startBtn.addEventListener('click', () => {
 
   statusDiv.innerText = `총 ${tasks.length}명 작업 시작...`;
   logArea.innerHTML = '';
-  startBtn.disabled = true;
+  
+  // 버튼 상태 토글
+  startBtn.style.display = 'none';
+  stopBtn.style.display = 'inline-block';
+  stopBtn.disabled = false;
+  stopBtn.innerText = '■ 작업 중단';
+  clearBtn.disabled = true;
 
   chrome.runtime.sendMessage({ action: "startJobs", tasks: tasks }, (response) => {
+    // 버튼 상태 원상복구
+    startBtn.style.display = 'inline-block';
+    startBtn.disabled = false;
+    stopBtn.style.display = 'none';
+    clearBtn.disabled = false;
+
     if (response && response.status === "done") {
-      const msg = `🎉 작업이 모두 완료되었습니다!\n\n성공: ${response.results.successCount}건\n실패: ${response.results.failCount}건`;
-      statusDiv.innerText += "\n\n" + msg;
-      startBtn.disabled = false;
+      let msg = "";
+      if (response.results.isCancelled) {
+        msg = `🛑 작업을 중단했습니다.\n\n성공: ${response.results.successCount}건\n실패: ${response.results.failCount}건`;
+      } else {
+        msg = `🎉 작업이 모두 완료되었습니다!\n\n성공: ${response.results.successCount}건\n실패: ${response.results.failCount}건`;
+      }
+      statusDiv.innerText = msg;
       alert(msg);
+    }
+  });
+});
+
+// ===== 중단 버튼 =====
+stopBtn.addEventListener('click', () => {
+  stopBtn.disabled = true;
+  stopBtn.innerText = '중단 중...';
+  chrome.runtime.sendMessage({ action: "stopJobs" }, (response) => {
+    if (response && response.status === "stopped") {
+      statusDiv.innerText = "사용자 요청에 의해 작업을 중단하는 중입니다...";
+      // 즉시 버튼 복구
+      startBtn.style.display = 'inline-block';
+      startBtn.disabled = false;
+      stopBtn.style.display = 'none';
+      stopBtn.innerText = '■ 작업 중단';
+      clearBtn.disabled = false;
     }
   });
 });
@@ -198,5 +232,40 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-// ===== 페이지 로드 시 초기화 =====
-initGrid();
+// ===== 페이지 로드 시 상태 확인 및 초기화 =====
+chrome.runtime.sendMessage({ action: "getRunningState" }, (response) => {
+  if (response && response.isRunning) {
+    // 실행 중인 UI 상태로 설정
+    startBtn.style.display = 'none';
+    stopBtn.style.display = 'inline-block';
+    stopBtn.disabled = false;
+    stopBtn.innerText = '■ 작업 중단';
+    clearBtn.disabled = true;
+
+    // 작업 리스트 복구
+    if (response.tasks && response.tasks.length > 0) {
+      gridBody.innerHTML = '';
+      response.tasks.forEach(task => {
+        gridBody.appendChild(createRow(task.email, task.gpt));
+      });
+      renumberRows();
+    }
+
+    // 진행 상태 및 로그 복구
+    statusDiv.innerText = response.statusText;
+    logArea.innerHTML = '';
+    response.logs.forEach(log => {
+      const div = document.createElement('div');
+      div.innerText = log.text;
+      if (log.text.includes('❌')) {
+        div.style.color = '#d32f2f';
+      } else {
+        div.style.color = '#388e3c';
+      }
+      logArea.appendChild(div);
+    });
+    logArea.scrollTop = logArea.scrollHeight;
+  } else {
+    initGrid();
+  }
+});
