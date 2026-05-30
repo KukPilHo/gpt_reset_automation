@@ -142,10 +142,13 @@ function handleComplete(results) {
   const seconds = elapsed % 60;
   const timeStr = minutes > 0 ? `${minutes}분 ${seconds}초` : `${seconds}초`;
 
-  const okCount = results.filter(r => r.status === 'OK').length;
-  const failCount = results.filter(r => r.status !== 'OK').length;
+  let okCount = 0;
+  let failCount = 0;
 
   if (currentPage === 'reset') {
+    okCount = results.filter(r => r.status === 'OK').length;
+    failCount = results.filter(r => r.status !== 'OK').length;
+
     const resultsBar = document.getElementById('reset-results');
     resultsBar.classList.add('visible');
     document.querySelector('#reset-ok strong').textContent = okCount;
@@ -155,6 +158,9 @@ function handleComplete(results) {
     document.getElementById('reset-status-badge').textContent = '완료';
     document.getElementById('reset-status-badge').className = 'status-badge idle';
   } else if (currentPage === 'members') {
+    okCount = results.filter(r => r.status === 'OK' || r.status === 'ALREADY_EXISTS').length;
+    failCount = results.filter(r => r.status === 'FAIL').length;
+
     const resultsBar = document.getElementById('member-results');
     resultsBar.classList.add('visible');
     document.querySelector('#member-ok strong').textContent = okCount;
