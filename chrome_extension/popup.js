@@ -84,37 +84,69 @@ gridBody.addEventListener('paste', (e) => {
   e.preventDefault();
 
   const lines = pasteData.split('\n').map(l => l.trim()).filter(l => l !== '');
-  const rowsData = lines.map(line => {
-    // 탭 구분 우선
-    if (line.includes('\t')) {
-      return line.split(/\t+/).map(p => p.trim());
-    }
-    // 탭이 없으면 공백 구분 (이메일에는 공백이 없으므로 안전)
-    return line.split(/\s+/).map(p => p.trim());
-  });
 
-  // 현재 포커스된 행 위치 파악
+  // 탭이 포함된 줄이 하나라도 있으면 "2열 데이터"로 판단
+  const hasTabs = lines.some(line => line.includes('\t'));
+
+  // 현재 포커스된 셀의 열(column) 인덱스 파악 (0=이메일, 1=GPT)
   let targetInput = e.target;
   let startRowIndex = 0;
+  let focusedColIndex = 0; // 기본: 이메일(A열)
   if (targetInput && targetInput.tagName === 'INPUT') {
     const tr = targetInput.closest('tr');
     startRowIndex = Array.from(gridBody.children).indexOf(tr);
     if (startRowIndex < 0) startRowIndex = 0;
+    // 해당 행의 input들 중 몇 번째인지 확인
+    const inputsInRow = Array.from(tr.querySelectorAll('input'));
+    const colIdx = inputsInRow.indexOf(targetInput);
+    if (colIdx >= 0) focusedColIndex = colIdx;
   }
 
-  // 필요한 만큼 행 확장
-  while (gridBody.children.length < startRowIndex + rowsData.length) {
-    gridBody.appendChild(createRow());
-  }
+  if (hasTabs) {
+    // ===== 2열 데이터 (탭 구분) =====
+    const rowsData = lines.map(line => {
+      return line.split(/\t/).map(p => p.trim());
+    });
 
-  // 데이터 채우기
-  rowsData.forEach((cols, i) => {
-    const tr = gridBody.children[startRowIndex + i];
-    tr.classList.remove('example-row');
-    const inputs = tr.querySelectorAll('input');
-    if (cols[0]) inputs[0].value = cols[0];
-    if (cols[1]) inputs[1].value = cols[1];
-  });
+    // 필요한 만큼 행 확장
+    while (gridBody.children.length < startRowIndex + rowsData.length) {
+      gridBody.appendChild(createRow());
+    }
+
+    // 데이터 채우기 — 포커스된 열 기준으로 채움
+    rowsData.forEach((cols, i) => {
+      const tr = gridBody.children[startRowIndex + i];
+      tr.classList.remove('example-row');
+      const inputs = tr.querySelectorAll('input');
+      
+      // focusedColIndex부터 순서대로 열을 채움
+      cols.forEach((val, ci) => {
+        const targetCol = focusedColIndex + ci;
+        if (targetCol < inputs.length && val) {
+          inputs[targetCol].value = val;
+        }
+      });
+    });
+  } else {
+    // ===== 1열 데이터 (탭 없음 — 이메일만 또는 GPT만) =====
+    // 포커스된 열에만 데이터를 삽입하고, 다른 열의 기존 값은 보존
+    const rowsData = lines.map(line => line.trim());
+
+    // 필요한 만큼 행 확장
+    while (gridBody.children.length < startRowIndex + rowsData.length) {
+      gridBody.appendChild(createRow());
+    }
+
+    // 데이터 채우기 — 포커스된 열에만 삽입
+    rowsData.forEach((val, i) => {
+      const tr = gridBody.children[startRowIndex + i];
+      tr.classList.remove('example-row');
+      const inputs = tr.querySelectorAll('input');
+      if (val) {
+        inputs[focusedColIndex].value = val;
+      }
+    });
+  }
 
   renumberRows();
   ensureEmptyRows();

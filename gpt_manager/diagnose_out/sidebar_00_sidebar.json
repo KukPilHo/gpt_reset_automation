@@ -1,0 +1,29 @@
+{
+  "headers": [],
+  "sidebar_links": [
+    {
+      "dataAttrs": {
+        "data-discover": "true",
+        "data-fill": "",
+        "data-sidebar-item": "true",
+        "data-testid": "create-new-chat-button"
+      },
+      "dataSidebarItem": "true",
+      "hasTrailingBtn": false,
+      "href": "/",
+      "text": "새 채팅"
+    },
+    {
+      "dataAttrs": {
+        "data-discover": "true",
+        "data-fill": "",
+        "data-sidebar-item": "true",
+        "data-testid": "sidebar-item-recall"
+      },
+      "dataSidebarItem": "true",
+      "hasTrailingBtn": false,
+      "href": "/library",
+      "text": "라이브러리"
+    }
+  ]
+}
