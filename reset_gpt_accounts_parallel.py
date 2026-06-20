@@ -7,6 +7,7 @@ import imaplib
 import email
 import email.utils
 import tempfile
+import subprocess
 from datetime import datetime, timezone, timedelta
 from email.header import decode_header
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,26 @@ from selenium.webdriver.common.action_chains import ActionChains
 
 # .env 파일 로드
 load_dotenv()
+
+
+def get_chrome_major_version():
+    """설치된 Chrome의 메이저 버전을 감지합니다."""
+    chrome_paths = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    for path in chrome_paths:
+        if os.path.exists(path):
+            try:
+                result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
+                match = re.search(r'(\d+)\.', result.stdout)
+                if match:
+                    version = int(match.group(1))
+                    print(f"🔍 감지된 Chrome 버전: {result.stdout.strip()} (메이저: {version})")
+                    return version
+            except Exception as e:
+                print(f"⚠️ Chrome 버전 감지 실패: {e}")
+    return None
 
 # ================= 설정 부분 =================
 MASTER_EMAIL = os.getenv("MASTER_EMAIL")
@@ -146,7 +167,7 @@ def get_openai_code(email_user, email_pass, target_email, login_timestamp=None, 
     return None
 
 
-def process_account(num):
+def process_account(num, chrome_version=None):
     """하나의 계정에 대한 전체 초기화 프로세스 (독립 스레드에서 실행)"""
     target_email = f"gpt{num}@ablearn.kr"
     tag = f"gpt{num}"
@@ -166,7 +187,7 @@ def process_account(num):
             # 독립 Chrome 인스턴스 생성
             options = uc.ChromeOptions()
             options.add_argument(f"--user-data-dir={profile_dir}")
-            driver = uc.Chrome(options=options, version_main=147)
+            driver = uc.Chrome(options=options, version_main=chrome_version)
             driver.set_window_size(1920, 1080)
             
             # ===== 1. 로그인 =====
@@ -565,8 +586,20 @@ def main():
     results = []
     start_time = time.time()
     
+    # Chrome 버전 자동 감지
+    chrome_version = get_chrome_major_version()
+    if chrome_version is None:
+        print("⚠️ Chrome 버전을 자동 감지하지 못했습니다. 기본값으로 진행합니다.")
+    
+    # 캐시된 드라이버 삭제 (버전 불일치 방지)
+    import pathlib
+    uc_cache = pathlib.Path.home() / "Library" / "Application Support" / "undetected_chromedriver"
+    if uc_cache.exists():
+        shutil.rmtree(uc_cache, ignore_errors=True)
+        print("🧹 기존 ChromeDriver 캐시 삭제 완료")
+    
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(process_account, num): num for num in target_numbers}
+        futures = {executor.submit(process_account, num, chrome_version): num for num in target_numbers}
         
         for future in as_completed(futures):
             num = futures[future]
