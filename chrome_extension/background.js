@@ -158,6 +158,7 @@ async function processJobsWithAutoRetry(tasks, originalTotal, previousResults) {
       const cancelResults = remainingTasks.map(t => ({
         email: t.email,
         gpt: t.gpt,
+        role: t.role,
         status: 'FAIL',
         reason: '사용자 중단'
       }));
@@ -185,7 +186,7 @@ async function processJobsWithAutoRetry(tasks, originalTotal, previousResults) {
 
     // 실패 개수 감소 - 다시 시도
     prevFailCount = currentFailCount;
-    currentTasks = roundFailures.map(j => ({ email: j.email, gpt: j.gpt }));
+    currentTasks = roundFailures.map(j => ({ email: j.email, gpt: j.gpt, role: j.role }));
   }
 
   const totalElapsed = Math.round((Date.now() - overallStartTime) / 1000);
@@ -245,21 +246,21 @@ async function processJobsRound(tasks, retryRound, previousSuccessCount, origina
 
         processSingleJob(task, i, tasks.length).then((result) => {
           if (isCancelled) {
-            jobResults.push({ email: task.email, gpt: task.gpt, status: 'FAIL', reason: '사용자 중단' });
+            jobResults.push({ email: task.email, gpt: task.gpt, role: task.role, status: 'FAIL', reason: '사용자 중단' });
             return;
           }
           if (result.success && result.alreadyExists) {
             safeSendMessage({ action: "logResult", text: `${prefix}🔵 이미 추가됨: ${task.email}` });
-            jobResults.push({ email: task.email, gpt: task.gpt, status: 'ALREADY_EXISTS' });
+            jobResults.push({ email: task.email, gpt: task.gpt, role: task.role, status: 'ALREADY_EXISTS' });
           } else if (result.success) {
             safeSendMessage({ action: "logResult", text: `${prefix}✅ 성공: ${task.email}` });
-            jobResults.push({ email: task.email, gpt: task.gpt, status: 'OK' });
+            jobResults.push({ email: task.email, gpt: task.gpt, role: task.role, status: 'OK' });
           } else {
             safeSendMessage({ action: "logResult", text: `${prefix}❌ 실패: ${task.email}` });
-            jobResults.push({ email: task.email, gpt: task.gpt, status: 'FAIL', reason: result.error });
+            jobResults.push({ email: task.email, gpt: task.gpt, role: task.role, status: 'FAIL', reason: result.error });
           }
         }).catch((err) => {
-          jobResults.push({ email: task.email, gpt: task.gpt, status: 'FAIL', reason: err.toString() });
+          jobResults.push({ email: task.email, gpt: task.gpt, role: task.role, status: 'FAIL', reason: err.toString() });
         }).finally(() => {
           activeCount--;
           completedCount++;
@@ -321,7 +322,7 @@ async function processSingleJob(task, index, total) {
 
     // 스크립트에 이메일 전달 후 끝날 때까지 대기
     let res = await new Promise((resolve) => {
-      chrome.tabs.sendMessage(tab.id, { action: "runAddMember", email: task.email }, (res) => {
+      chrome.tabs.sendMessage(tab.id, { action: "runAddMember", email: task.email, role: task.role || "member" }, (res) => {
         resolve(res);
       });
     });

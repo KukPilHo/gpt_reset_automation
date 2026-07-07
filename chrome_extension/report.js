@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
       retryBtn.textContent = `❌ 실패 항목 ${failedJobs.length}건 재시도`;
 
       retryBtn.addEventListener('click', () => {
-        const retryTasks = failedJobs.map(job => ({ email: job.email, gpt: job.gpt }));
+        const retryTasks = failedJobs.map(job => ({ email: job.email, gpt: job.gpt, role: job.role }));
         const successfulResults = jobResults.filter(job => job.status !== 'FAIL');
         const origTotal = data.gptAutoResults.originalTotal || data.gptAutoResults.tasksTotal;
 

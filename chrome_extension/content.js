@@ -1,6 +1,7 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "runAddMember") {
-    runAddMember(request.email)
+    // role: "member"(그룹 멤버) 또는 "admin"(그룹 관리자). 기본값은 member.
+    runAddMember(request.email, request.role || "member")
       .then((result) => sendResponse(result))
       .catch((e) => sendResponse({success: false, error: e.toString()}));
     return true; // 비동기 응답 처리
@@ -119,9 +120,15 @@ function checkEmailExists(email) {
   return false;
 }
 
-async function runAddMember(email) {
+async function runAddMember(email, role = "member") {
+  // role 에 따라 이메일을 넣을 입력 필드를 결정합니다.
+  // - member: "그룹 멤버" 필드
+  // - admin : "그룹 관리자" 필드
+  const fieldLabel = role === "admin" ? "그룹 관리자" : "그룹 멤버";
+
   try {
     // ★ 사전 체크: 추가하려는 이메일이 이미 멤버 목록에 있는지 확인
+    // (회원/관리자 모두 이미 그룹에 존재하면 건너뜁니다. 일반 멤버를 관리자로 승격하지 않음)
     if (checkEmailExists(email)) {
       console.log(`[중복 감지] ${email}은(는) 이미 그룹에 존재합니다.`);
       return { success: true, alreadyExists: true };
@@ -131,9 +138,9 @@ async function runAddMember(email) {
     let addBtn = await waitForElement('[aria-label="회원 추가"]');
     addBtn.click();
     await wait(1500);
-    
-    // 2. 그룹 멤버 이메일 입력 (Codegen: get_by_label("그룹 멤버"))
-    let input = await waitForElement('input[aria-label="그룹 멤버"]');
+
+    // 2. 이메일 입력 (member=그룹 멤버, admin=그룹 관리자)
+    let input = await waitForElement(`input[aria-label="${fieldLabel}"]`);
     // 창이 백그라운드일 때 focus()가 무시되는 것을 막기 위해 CDP로 강제 마우스 클릭
     await clickViaDebugger(input);
     await wait(500);
@@ -192,7 +199,7 @@ async function runAddMember(email) {
         let dialogs = Array.from(document.querySelectorAll('[role="dialog"], [role="alert"], .m2-snackbar'));
         for (let d of dialogs) {
             // 회원 추가 모달창 본문 자체는 제외 (너무 길어짐)
-            if (d.querySelector('input[aria-label="그룹 멤버"]')) continue; 
+            if (d.querySelector(`input[aria-label="${fieldLabel}"]`)) continue;
             
             if (d.innerText && d.innerText.trim().length > 0) {
                 // "취소", "확인" 등 버튼 텍스트 제거
@@ -205,7 +212,7 @@ async function runAddMember(email) {
         }
         
         // 만약 여전히 타임아웃 에러이고, 회원 추가 버튼이 안 눌렸다면?
-        if (errText.includes("Timeout waiting for input") && document.querySelector('input[aria-label="그룹 멤버"]')) {
+        if (errText.includes("Timeout waiting for input") && document.querySelector(`input[aria-label="${fieldLabel}"]`)) {
            errText = "키보드 타이핑이 입력되지 않아 버튼이 비활성화되었습니다.";
         }
 

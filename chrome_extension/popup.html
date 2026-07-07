@@ -80,6 +80,37 @@
       font-size: 11px;
     }
 
+    /* ===== Mode tabs ===== */
+    .mode-tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .mode-tab {
+      flex: 1;
+      border: 2px solid #dadce0;
+      background: #fff;
+      color: #5f6368;
+      padding: 10px 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-tab:hover:not(.active):not(:disabled) {
+      border-color: #b0c4f0;
+      background: #f7faff;
+    }
+    .mode-tab.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+    }
+    .mode-tab:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     /* ===== Excel-like Grid ===== */
     .grid-wrapper { 
       border: 2px solid #dadce0; 
@@ -99,6 +130,7 @@
     col.col-num { width: 32px; }
     col.col-email { width: auto; }
     col.col-gpt { width: 42%; }
+    col.col-range { width: 28%; }
 
     thead th { 
       background-color: #f1f3f4; 
@@ -250,14 +282,23 @@
   <div class="container">
     
     <div class="step-box">
-      <div class="step-title"><span class="num">1</span>데이터 입력</div>
+      <div class="step-title"><span class="num">1</span>추가 유형 선택</div>
+      <div class="mode-tabs">
+        <button class="mode-tab active" id="modeMemberBtn" data-mode="member">👥 그룹 회원 추가</button>
+        <button class="mode-tab" id="modeAdminBtn" data-mode="admin">🛡️ 그룹 관리자 추가</button>
+      </div>
+    </div>
+
+    <!-- ===== 회원 모드 ===== -->
+    <div class="step-box mode-section" id="memberSection">
+      <div class="step-title"><span class="num">2</span>데이터 입력 (회원)</div>
       <div class="step-desc">
         아래 표에 <b>직접 입력</b>하거나, 엑셀/스프레드시트에서 두 열을 복사한 뒤 표의 아무 셀에 <b>Ctrl+V</b>로 붙여넣으세요.
       </div>
 
       <div class="grid-wrapper">
         <div class="grid-scroll">
-          <table id="excelGrid">
+          <table>
             <colgroup>
               <col class="col-num">
               <col class="col-email">
@@ -270,7 +311,7 @@
                 <th>할당할 GPT 계정 (B)</th>
               </tr>
             </thead>
-            <tbody id="gridBody">
+            <tbody id="memberGridBody">
               <!-- JS가 초기 행 생성 -->
             </tbody>
           </table>
@@ -279,6 +320,42 @@
 
       <div class="tip-box">
         💡 GPT 계정은 <span class="highlight">gpt10</span> 또는 <span class="highlight">gpt10@ablearn.kr</span> 형태 모두 OK!&nbsp;&nbsp;|&nbsp;&nbsp;빈 행은 자동으로 무시됩니다.
+      </div>
+    </div>
+
+    <!-- ===== 관리자 모드 ===== -->
+    <div class="step-box mode-section" id="adminSection" style="display:none;">
+      <div class="step-title"><span class="num">2</span>데이터 입력 (관리자)</div>
+      <div class="step-desc">
+        한 사람을 <b>여러 계정의 관리자</b>로 한 번에 등록합니다. <b>시작 계정</b>과 <b>끝 계정</b>을 넣으면 그 사이 모든 계정에 관리자로 등록돼요.
+      </div>
+
+      <div class="grid-wrapper">
+        <div class="grid-scroll">
+          <table>
+            <colgroup>
+              <col class="col-num">
+              <col class="col-email">
+              <col class="col-range">
+              <col class="col-range">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="corner"></th>
+                <th>관리자 이메일</th>
+                <th>시작 계정</th>
+                <th>끝 계정</th>
+              </tr>
+            </thead>
+            <tbody id="adminGridBody">
+              <!-- JS가 초기 행 생성 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tip-box">
+        💡 예: 시작 <span class="highlight">gpt1</span> ~ 끝 <span class="highlight">gpt40</span> → 40개 계정에 관리자 등록.&nbsp;&nbsp;|&nbsp;&nbsp;끝 계정을 비우면 시작 계정 1개만 등록됩니다.
       </div>
     </div>
 
